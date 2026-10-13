@@ -143,6 +143,47 @@ body {
   gap: 0.5rem;
 }
 
+/* Per Tranche Calculation Box */
+.tranche-calc-box {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1.25rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.tranche-calc-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.tranche-calc-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-cyan);
+}
+
+.tranche-calc-sub {
+  font-size: 0.825rem;
+  color: var(--text-muted);
+}
+
+.tranche-calc-amount {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: -0.02em;
+}
+
 /* Form Grid */
 .form-grid {
   display: grid;

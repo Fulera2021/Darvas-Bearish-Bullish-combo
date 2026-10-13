@@ -34,9 +34,18 @@
         <h2 class="panel-title"><span>⚙️</span> Strategy & Backtest Parameters</h2>
         <!-- Strategy Variant Selector -->
         <div class="toggle-group">
-          <button type="button" class="toggle-btn variant-toggle-btn active" data-variant="magic">Vanilla + Magic</button>
-          <button type="button" class="toggle-btn variant-toggle-btn" data-variant="vanilla">Vanilla Strategy</button>
+          <button type="button" class="toggle-btn variant-toggle-btn active" data-variant="vanilla">Vanilla Strategy</button>
+          <button type="button" class="toggle-btn variant-toggle-btn" data-variant="magic">Vanilla + Magic</button>
         </div>
+      </div>
+
+      <!-- Per Tranche Allocation Box -->
+      <div class="tranche-calc-box" id="tranche-calc-box">
+        <div class="tranche-calc-left">
+          <span class="tranche-calc-title">Per Tranche Buy Amount</span>
+          <span class="tranche-calc-sub" id="tranche-calc-sub">Capital per Stock: 2,00,000 | 5 Tranches (Max 5 Concurrent Stocks)</span>
+        </div>
+        <div class="tranche-calc-amount" id="tranche-calc-amount">40,000</div>
       </div>
 
       <form id="backtest-form">
@@ -76,8 +85,8 @@
 
           <!-- Overall Capital -->
           <div class="form-group">
-            <label class="form-label" for="total-capital">Overall Capital (Plain Number)</label>
-            <input type="number" id="total-capital" class="form-control" value="1000000" step="10000" min="10000">
+            <label class="form-label" for="total-capital">Overall Capital</label>
+            <input type="text" id="total-capital" class="form-control" value="10,00,000" inputmode="numeric" placeholder="e.g. 10,00,000">
           </div>
 
           <!-- Max Active Stocks (Portfolio concurrency) -->
@@ -90,11 +99,10 @@
           <div class="form-group">
             <label class="form-label" for="num-parts">Tranches per Stock</label>
             <select id="num-parts" class="form-select">
-              <option value="1">1 Tranche</option>
-              <option value="2">2 Tranches</option>
-              <option value="3">3 Tranches</option>
-              <option value="4">4 Tranches</option>
-              <option value="5" selected>5 Tranches (Recommended)</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5" selected>5</option>
             </select>
           </div>
 
@@ -183,12 +191,6 @@
           <div class="kpi-title">XIRR %</div>
           <div class="kpi-value" id="kpi-deployed-xirr">-</div>
           <div class="kpi-sub">Annualized return on deployed cash</div>
-        </div>
-
-        <div class="kpi-card">
-          <div class="kpi-title">Win Rate %</div>
-          <div class="kpi-value" id="kpi-win-rate">-</div>
-          <div class="kpi-sub">Target exit accuracy</div>
         </div>
 
         <div class="kpi-card">

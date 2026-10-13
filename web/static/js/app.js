@@ -4,11 +4,31 @@
 
 let state = {
   mode: 'universe',          // 'universe' or 'stock'
-  variant: 'magic',          // 'magic' or 'vanilla'
+  variant: 'vanilla',         // 'vanilla' (default) or 'magic'
   lastRunId: null,
   lastRunData: null,
   activeTab: 'summary'
 };
+
+function formatIndianNumber(num) {
+  if (isNaN(num) || num === null || num === undefined) return '0';
+  return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.floor(num));
+}
+
+function parseIndianNumber(str) {
+  if (!str) return 0;
+  const clean = String(str).replace(/[^\d]/g, '');
+  return parseInt(clean, 10) || 0;
+}
+
+function getYesterdayDateStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   initVariantToggle();
@@ -51,8 +71,33 @@ function initModeToggle() {
         universeGroup.classList.remove('d-none');
         maxStocksGroup.classList.remove('d-none');
       }
+      updateTrancheCalcBox();
     });
   });
+}
+
+function updateTrancheCalcBox() {
+  const capInput = document.getElementById('total-capital');
+  const totalCap = capInput ? parseIndianNumber(capInput.value) : 1000000;
+  const numParts = parseInt(document.getElementById('num-parts')?.value, 10) || 5;
+  const maxStocks = parseInt(document.getElementById('max-stocks')?.value, 10) || 5;
+
+  let perTranche = 0;
+  let subText = '';
+
+  if (state.mode === 'stock') {
+    perTranche = Math.floor(totalCap / numParts);
+    subText = `Total Capital: ${formatIndianNumber(totalCap)} split into ${numParts} Tranches`;
+  } else {
+    const perStock = Math.floor(totalCap / maxStocks);
+    perTranche = Math.floor(perStock / numParts);
+    subText = `Capital per Stock: ${formatIndianNumber(perStock)} | ${numParts} Tranches (Max ${maxStocks} Concurrent Stocks)`;
+  }
+
+  const amtEl = document.getElementById('tranche-calc-amount');
+  const subEl = document.getElementById('tranche-calc-sub');
+  if (amtEl) amtEl.textContent = formatIndianNumber(perTranche);
+  if (subEl) subEl.textContent = subText;
 }
 
 function initChips() {
@@ -99,15 +144,39 @@ function initForm() {
   const spinner = document.getElementById('run-spinner');
   const btnText = document.getElementById('run-btn-text');
 
+  // Dynamic Yesterday End Date
+  const endDateInput = document.getElementById('end-date');
+  if (endDateInput) {
+    const yestStr = getYesterdayDateStr();
+    endDateInput.value = yestStr;
+    endDateInput.max = yestStr;
+  }
+
+  // Indian Number Format for Total Capital
+  const capitalInput = document.getElementById('total-capital');
+  if (capitalInput) {
+    capitalInput.value = formatIndianNumber(parseIndianNumber(capitalInput.value));
+    capitalInput.addEventListener('input', () => {
+      const raw = parseIndianNumber(capitalInput.value);
+      capitalInput.value = raw > 0 ? formatIndianNumber(raw) : '';
+      updateTrancheCalcBox();
+    });
+  }
+
+  // Listeners for live recalculation of per tranche buy amount box
+  document.getElementById('num-parts')?.addEventListener('change', updateTrancheCalcBox);
+  document.getElementById('max-stocks')?.addEventListener('input', updateTrancheCalcBox);
+  updateTrancheCalcBox();
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     // Collect parameters
-    const totalCapital = parseFloat(document.getElementById('total-capital').value) || 1000000;
+    const totalCapital = parseIndianNumber(document.getElementById('total-capital').value) || 1000000;
     const maxStocks = parseInt(document.getElementById('max-stocks').value, 10) || 5;
     const numParts = parseInt(document.getElementById('num-parts').value, 10) || 5;
     const startDate = document.getElementById('start-date').value || '2021-01-01';
-    const endDate = document.getElementById('end-date').value || '2026-10-11';
+    const endDate = document.getElementById('end-date').value || getYesterdayDateStr();
     const targetPct = parseFloat(document.getElementById('target-pct').value) || 5.0;
     const bullishMinReturn = parseFloat(document.getElementById('bullish-min-return').value) || 15.0;
 
@@ -207,7 +276,8 @@ function renderResults(data) {
 
   document.getElementById('kpi-return-pct').textContent = `${formatNum(sum.total_portfolio_return_pct)}%`;
   document.getElementById('kpi-deployed-xirr').textContent = `${formatNum(sum.deployed_xirr_pct)}%`;
-  document.getElementById('kpi-win-rate').textContent = `${formatNum(sum.win_rate_pct)}%`;
+  const winRateEl = document.getElementById('kpi-win-rate');
+  if (winRateEl) winRateEl.textContent = `${formatNum(sum.win_rate_pct)}%`;
   document.getElementById('kpi-drawdown').textContent = `${formatNum(sum.max_drawdown_pct)}%`;
   document.getElementById('kpi-trades-count').textContent = `${sum.completed_trades} / ${sum.total_trades}`;
 
