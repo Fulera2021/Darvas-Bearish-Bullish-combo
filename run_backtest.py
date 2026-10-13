@@ -53,7 +53,6 @@ def run_single_stock(symbol: str, config: BacktestConfig, output_dir: str) -> Ba
     print(f"  Total Trades Taken           : {result.total_trades:>15}")
     print(f"  Completed (Closed) Trades    : {result.completed_trades:>15}")
     print(f"  Open Trades Currently Active : {result.open_trades:>15}")
-    print(f"  Win Rate (Completed)         : {result.win_rate_pct:>14.2f}%")
     print(f"  Average Holding Duration     : {result.avg_holding_days:>14.1f} calendar days")
     print("=" * 65 + "\n")
 

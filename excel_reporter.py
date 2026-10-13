@@ -94,7 +94,6 @@ def export_backtest_to_excel(
             ("Completed Trades", result.completed_trades, FMT_QTY),
             ("Open Trades", result.open_trades, FMT_QTY),
             ("Magic Events Count", len(result.magic_events), FMT_QTY),
-            ("Win Rate (Closed)", result.win_rate_pct / 100.0, FMT_PCT),
             ("Avg Holding Days", result.avg_holding_days, "0.0"),
         ]
         card_rows_count = 4
@@ -111,7 +110,6 @@ def export_backtest_to_excel(
             ("Total Trades Taken", result.total_trades, FMT_QTY),
             ("Completed Trades", result.completed_trades, FMT_QTY),
             ("Open Trades", result.open_trades, FMT_QTY),
-            ("Win Rate (Closed)", result.win_rate_pct / 100.0, FMT_PCT),
             ("Avg Holding Days", result.avg_holding_days, "0.0"),
             ("Open Invested Capital", result.open_positions_invested, FMT_CURRENCY),
             ("Max Active Slots", result.max_active_tranches, FMT_QTY),

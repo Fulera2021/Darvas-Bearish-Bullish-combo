@@ -76,7 +76,6 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
         ("Total Trades", result.total_trades, NUM_FORMAT_INT),
         ("Completed Trades", result.completed_trades, NUM_FORMAT_INT),
         ("Open Positions", result.open_trades, NUM_FORMAT_INT),
-        ("Win Rate %", f"{result.win_rate_pct:.2f}%", None),
         ("Max Drawdown %", f"{result.max_drawdown_pct:.2f}%", None),
         ("Avg Holding Days", f"{result.avg_holding_days:.1f}", None),
     ]
@@ -243,7 +242,6 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
         ("Total Portfolio Return %", f"{result.total_portfolio_return_pct:.2f}%", None),
         ("XIRR %", f"{result.deployed_xirr_pct:.2f}%", None),
         ("Max Drawdown %", f"{result.max_drawdown_pct:.2f}%", None),
-        ("Win Rate %", f"{result.win_rate_pct:.2f}%", None),
         ("Total Trades", result.total_trades, NUM_FORMAT_INT),
         ("Completed Trades", result.completed_trades, NUM_FORMAT_INT),
         ("Open Positions", result.open_trades, NUM_FORMAT_INT),
@@ -270,7 +268,7 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
 
     b_headers = [
         "Symbol", "Total Trades", "Completed Trades", "Open Trades",
-        "Realized Trade Profit", "Magic Profit", "Dividend", "Total Profit", "Win Rate %",
+        "Realized Trade Profit", "Magic Profit", "Dividend", "Total Profit",
         "Open Invested", "Unrealized P&L"
     ]
 
@@ -285,7 +283,7 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
         row_data = [
             s.symbol, s.total_trades, s.completed_trades, s.open_trades,
             s.realized_trade_profit, s.total_magic_profit, round(s.dividend_income, 2), s.total_profit,
-            f"{s.win_rate_pct:.2f}%", s.open_positions_invested, s.unrealized_pnl
+            s.open_positions_invested, s.unrealized_pnl
         ]
         is_even = (r_idx % 2 == 0)
         for c_idx, val in enumerate(row_data, 1):
@@ -296,7 +294,7 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
                 cell.fill = FILL_ZEBRA
             if c_idx == 1:
                 cell.alignment = ALIGN_LEFT
-            elif c_idx in [2, 3, 4, 9]:
+            elif c_idx in [2, 3, 4]:
                 cell.alignment = ALIGN_CENTER
             else:
                 cell.alignment = ALIGN_RIGHT

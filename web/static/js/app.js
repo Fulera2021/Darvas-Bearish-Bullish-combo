@@ -276,8 +276,6 @@ function renderResults(data) {
 
   document.getElementById('kpi-return-pct').textContent = `${formatNum(sum.total_portfolio_return_pct)}%`;
   document.getElementById('kpi-deployed-xirr').textContent = `${formatNum(sum.deployed_xirr_pct)}%`;
-  const winRateEl = document.getElementById('kpi-win-rate');
-  if (winRateEl) winRateEl.textContent = `${formatNum(sum.win_rate_pct)}%`;
   document.getElementById('kpi-drawdown').textContent = `${formatNum(sum.max_drawdown_pct)}%`;
   document.getElementById('kpi-trades-count').textContent = `${sum.completed_trades} / ${sum.total_trades}`;
 
@@ -321,7 +319,7 @@ function renderUniverseBreakdown(stocks) {
   tbody.innerHTML = '';
 
   if (!stocks || stocks.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="text-center">No stocks evaluated</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center">No stocks evaluated</td></tr>';
     return;
   }
 
@@ -336,7 +334,6 @@ function renderUniverseBreakdown(stocks) {
       <td class="num-cell text-profit">${formatNum(s.total_magic_profit)}</td>
       <td class="num-cell text-profit">${formatNum(s.dividend_income || 0)}</td>
       <td class="num-cell ${s.total_profit >= 0 ? 'text-profit' : 'text-loss'}"><strong>${formatNum(s.total_profit)}</strong></td>
-      <td class="num-cell">${formatNum(s.win_rate_pct)}%</td>
       <td class="num-cell">${formatNum(s.open_positions_invested)}</td>
       <td class="num-cell ${s.unrealized_pnl >= 0 ? 'text-profit' : 'text-loss'}">${formatNum(s.unrealized_pnl)}</td>
     `;
