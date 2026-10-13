@@ -56,7 +56,7 @@ class PortfolioBacktestResult:
 def run_portfolio_universe_simulation(
     symbols: List[str],
     config: BacktestConfig,
-    max_active_stocks: int = 5,
+    max_active_stocks: int = 25,
     db_path: str = DEFAULT_DB_PATH
 ) -> PortfolioBacktestResult:
     """
@@ -66,7 +66,7 @@ def run_portfolio_universe_simulation(
     - Enforces maximum concurrent distinct stocks in portfolio.
     """
     if max_active_stocks <= 0:
-        max_active_stocks = 5
+        max_active_stocks = 25
     if config.num_parts <= 0:
         config.num_parts = 5
 

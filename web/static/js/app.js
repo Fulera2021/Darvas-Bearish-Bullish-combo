@@ -80,7 +80,7 @@ function updateTrancheCalcBox() {
   const capInput = document.getElementById('total-capital');
   const totalCap = capInput ? parseIndianNumber(capInput.value) : 1000000;
   const numParts = parseInt(document.getElementById('num-parts')?.value, 10) || 5;
-  const maxStocks = parseInt(document.getElementById('max-stocks')?.value, 10) || 5;
+  const maxStocks = parseInt(document.getElementById('max-stocks')?.value, 10) || 25;
 
   let perTranche = 0;
   let subText = '';
@@ -173,7 +173,7 @@ function initForm() {
 
     // Collect parameters
     const totalCapital = parseIndianNumber(document.getElementById('total-capital').value) || 1000000;
-    const maxStocks = parseInt(document.getElementById('max-stocks').value, 10) || 5;
+    const maxStocks = parseInt(document.getElementById('max-stocks').value, 10) || 25;
     const numParts = parseInt(document.getElementById('num-parts').value, 10) || 5;
     const startDate = document.getElementById('start-date').value || '2021-01-01';
     const endDate = document.getElementById('end-date').value || getYesterdayDateStr();
