@@ -46,8 +46,20 @@ function initVariantToggle() {
       btns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.variant = btn.dataset.variant;
+      updateMagicCardVisibility();
     });
   });
+}
+
+function updateMagicCardVisibility() {
+  const magicCard = document.getElementById('kpi-card-magic');
+  if (magicCard) {
+    if (state.variant === 'vanilla') {
+      magicCard.classList.add('d-none');
+    } else {
+      magicCard.classList.remove('d-none');
+    }
+  }
 }
 
 function initModeToggle() {
@@ -98,6 +110,40 @@ function updateTrancheCalcBox() {
   const subEl = document.getElementById('tranche-calc-sub');
   if (amtEl) amtEl.textContent = formatIndianNumber(perTranche);
   if (subEl) subEl.textContent = subText;
+}
+
+function updateTimePeriodBox() {
+  const startInput = document.getElementById('start-date');
+  const endInput = document.getElementById('end-date');
+  if (!startInput || !endInput) return;
+
+  const sVal = startInput.value;
+  const eVal = endInput.value;
+  const yearsEl = document.getElementById('time-period-years');
+  const subEl = document.getElementById('time-period-sub');
+
+  if (!sVal || !eVal) {
+    if (yearsEl) yearsEl.textContent = '-';
+    return;
+  }
+
+  const sDate = new Date(sVal);
+  const eDate = new Date(eVal);
+  const diffTime = eDate.getTime() - sDate.getTime();
+  const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+  if (diffDays <= 0 || isNaN(diffDays)) {
+    if (yearsEl) yearsEl.textContent = '0.0 Years';
+    if (subEl) subEl.textContent = 'Invalid date range';
+    return;
+  }
+
+  const years = (diffDays / 365.25).toFixed(1);
+  if (yearsEl) yearsEl.textContent = `${years} Years`;
+
+  const sFormat = sDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const eFormat = eDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  if (subEl) subEl.textContent = `${sFormat} to ${eFormat}`;
 }
 
 function initChips() {
@@ -167,6 +213,14 @@ function initForm() {
   document.getElementById('num-parts')?.addEventListener('change', updateTrancheCalcBox);
   document.getElementById('max-stocks')?.addEventListener('input', updateTrancheCalcBox);
   updateTrancheCalcBox();
+
+  // Listeners for live recalculation of time selection period card
+  document.getElementById('start-date')?.addEventListener('change', updateTimePeriodBox);
+  document.getElementById('end-date')?.addEventListener('change', updateTimePeriodBox);
+  document.getElementById('start-date')?.addEventListener('input', updateTimePeriodBox);
+  document.getElementById('end-date')?.addEventListener('input', updateTimePeriodBox);
+  updateTimePeriodBox();
+  updateMagicCardVisibility();
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -248,9 +302,31 @@ function renderResults(data) {
   const sum = data.summary;
 
   // Render KPI Cards
+  const returnAmt = (sum.total_portfolio_return_amount !== undefined)
+    ? sum.total_portfolio_return_amount
+    : (Math.round(((sum.total_realized_profit || 0) + (sum.unrealized_pnl || 0)) * 100) / 100);
+  const retAmtEl = document.getElementById('kpi-return-amount');
+  const retAmtCard = document.getElementById('kpi-card-return-amt');
+  if (retAmtEl) {
+    const prefix = returnAmt > 0 ? '+' : '';
+    retAmtEl.textContent = `${prefix}${formatNum(returnAmt)}`;
+  }
+  if (retAmtCard) {
+    retAmtCard.classList.remove('kpi-emerald', 'kpi-rose', 'kpi-indigo');
+    if (returnAmt > 0) {
+      retAmtCard.classList.add('kpi-emerald');
+    } else if (returnAmt < 0) {
+      retAmtCard.classList.add('kpi-rose');
+    } else {
+      retAmtCard.classList.add('kpi-indigo');
+    }
+  }
+
   document.getElementById('kpi-realized-profit').textContent = formatNum(sum.total_realized_profit);
   document.getElementById('kpi-trade-profit').textContent = formatNum(sum.realized_trade_profit);
-  document.getElementById('kpi-magic-profit').textContent = formatNum(sum.total_magic_profit);
+  const magicEl = document.getElementById('kpi-magic-profit');
+  if (magicEl) magicEl.textContent = formatNum(sum.total_magic_profit);
+  updateMagicCardVisibility();
   document.getElementById('kpi-idle-interest').textContent = formatNum(sum.idle_capital_interest);
 
   const divEl = document.getElementById('kpi-dividend-income');

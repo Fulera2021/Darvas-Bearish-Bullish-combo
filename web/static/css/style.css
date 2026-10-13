@@ -143,18 +143,31 @@ body {
   gap: 0.5rem;
 }
 
-/* Per Tranche Calculation Box */
+/* Top Summary Cards Grid */
+.top-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Per Tranche Calculation Box & Time Period Box */
 .tranche-calc-box {
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%);
   border: 1px solid rgba(56, 189, 248, 0.25);
   border-radius: var(--radius-md);
   padding: 0.85rem 1.25rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.tranche-calc-box.time-box {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(56, 189, 248, 0.08) 100%);
+  border-color: rgba(168, 85, 247, 0.25);
 }
 
 .tranche-calc-left {
@@ -171,6 +184,10 @@ body {
   color: var(--accent-cyan);
 }
 
+.tranche-calc-box.time-box .tranche-calc-title {
+  color: #c084fc;
+}
+
 .tranche-calc-sub {
   font-size: 0.825rem;
   color: var(--text-muted);
@@ -182,6 +199,10 @@ body {
   font-weight: 700;
   color: #38bdf8;
   letter-spacing: -0.02em;
+}
+
+.tranche-calc-box.time-box .tranche-calc-amount {
+  color: #e879f9;
 }
 
 /* Form Grid */

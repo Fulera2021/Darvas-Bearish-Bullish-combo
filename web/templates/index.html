@@ -39,13 +39,23 @@
         </div>
       </div>
 
-      <!-- Per Tranche Allocation Box -->
-      <div class="tranche-calc-box" id="tranche-calc-box">
-        <div class="tranche-calc-left">
-          <span class="tranche-calc-title">Per Tranche Buy Amount</span>
-          <span class="tranche-calc-sub" id="tranche-calc-sub">Capital per Stock: 2,00,000 | 5 Tranches (Max 5 Concurrent Stocks)</span>
+      <!-- Top Summary Cards (Per Tranche Buy Amount & Time Selection Period) -->
+      <div class="top-cards-grid">
+        <div class="tranche-calc-box" id="tranche-calc-box">
+          <div class="tranche-calc-left">
+            <span class="tranche-calc-title">Per Tranche Buy Amount</span>
+            <span class="tranche-calc-sub" id="tranche-calc-sub">Capital per Stock: 40,000 | 5 Tranches (Max 25 Concurrent Stocks)</span>
+          </div>
+          <div class="tranche-calc-amount" id="tranche-calc-amount">8,000</div>
         </div>
-        <div class="tranche-calc-amount" id="tranche-calc-amount">40,000</div>
+
+        <div class="tranche-calc-box time-box" id="time-period-box">
+          <div class="tranche-calc-left">
+            <span class="tranche-calc-title">Time Selection Period</span>
+            <span class="tranche-calc-sub" id="time-period-sub">01-Jan-2021 to Yesterday</span>
+          </div>
+          <div class="tranche-calc-amount" id="time-period-years">5.8 Years</div>
+        </div>
       </div>
 
       <form id="backtest-form">
@@ -145,6 +155,12 @@
     <section id="results-section" class="d-none">
       <!-- Executive KPI Cards -->
       <div class="kpi-grid">
+        <div class="kpi-card kpi-indigo" id="kpi-card-return-amt">
+          <div class="kpi-title">Total Portfolio Return Amount</div>
+          <div class="kpi-value" id="kpi-return-amount">-</div>
+          <div class="kpi-sub">Realized Profit + Unrealized P&L</div>
+        </div>
+
         <div class="kpi-card kpi-emerald">
           <div class="kpi-title">Total Realized Profit</div>
           <div class="kpi-value" id="kpi-realized-profit">-</div>
@@ -157,7 +173,7 @@
           <div class="kpi-sub">From 5% tranche target exits</div>
         </div>
 
-        <div class="kpi-card kpi-amber">
+        <div class="kpi-card kpi-amber d-none" id="kpi-card-magic">
           <div class="kpi-title">Magic Profit (20DL)</div>
           <div class="kpi-value" id="kpi-magic-profit">-</div>
           <div class="kpi-sub">Rs 500 credited on rolling breakdown</div>
