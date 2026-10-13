@@ -7,8 +7,8 @@ from typing import List
 class BacktestConfig:
     # Portfolio Capital parameters (plain numbers, no currency symbol)
     total_capital: float = 100000.0
-    num_parts: int = 5
-    tranche_capital: float = 20000.0
+    num_parts: int = 4
+    tranche_capital: float = 25000.0
     
     # Strategy triggers
     target_pct: float = 0.05           # 5% profit target per tranche

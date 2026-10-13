@@ -68,7 +68,7 @@ def run_portfolio_universe_simulation(
     if max_active_stocks <= 0:
         max_active_stocks = 25
     if config.num_parts <= 0:
-        config.num_parts = 5
+        config.num_parts = 4
 
     stock_capital = config.total_capital / float(max_active_stocks)
     tranche_capital = stock_capital / float(config.num_parts)

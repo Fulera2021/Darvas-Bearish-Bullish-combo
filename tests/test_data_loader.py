@@ -14,8 +14,8 @@ class TestDataLoader(unittest.TestCase):
     def test_default_config(self):
         cfg = BacktestConfig()
         self.assertEqual(cfg.total_capital, 100000.0)
-        self.assertEqual(cfg.num_parts, 5)
-        self.assertEqual(cfg.tranche_capital, 20000.0)
+        self.assertEqual(cfg.num_parts, 4)
+        self.assertEqual(cfg.tranche_capital, 25000.0)
         self.assertEqual(cfg.target_pct, 0.05)
         self.assertEqual(cfg.entry_buffer_pct, 0.005)
 
