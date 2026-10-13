@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Darvas Bearish + Bullish Combo — Algorithmic Backtester</title>
+  <meta name="description" content="Professional backtesting engine for the 5-Tranche Darvas Bearish Dip-Buying + Bullish Momentum Combo on Indian Equities (NSE).">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-wrapper">
+        <div class="brand-icon">📈</div>
+        <div>
+          <span class="brand-title">Darvas Bearish + Bullish Combo</span>
+          <span class="brand-tag">Combo Web</span>
+        </div>
+      </div>
+      <div>
+        <button id="download-excel-btn" class="btn-secondary" disabled>
+          <span>📥</span> Download Excel (.xlsx)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-wrapper">
+    <!-- Backtest Configuration Panel -->
+    <section class="control-panel">
+      <div class="panel-header">
+        <h2 class="panel-title"><span>⚙️</span> Strategy & Backtest Parameters</h2>
+        <!-- Strategy Variant Selector -->
+        <div class="toggle-group">
+          <button type="button" class="toggle-btn variant-toggle-btn active" data-variant="magic">Vanilla + Magic</button>
+          <button type="button" class="toggle-btn variant-toggle-btn" data-variant="vanilla">Vanilla Strategy</button>
+        </div>
+      </div>
+
+      <form id="backtest-form">
+        <div class="form-grid">
+          <!-- Backtest Target Mode -->
+          <div class="form-group">
+            <label class="form-label">Backtest Mode</label>
+            <div class="toggle-group" style="width: 100%;">
+              <button type="button" class="toggle-btn mode-toggle-btn active" style="flex:1;" data-mode="universe">Stock Universe</button>
+              <button type="button" class="toggle-btn mode-toggle-btn" style="flex:1;" data-mode="stock">Individual Stock</button>
+            </div>
+          </div>
+
+          <!-- Stock Universe Selection -->
+          <div class="form-group" id="universe-input-group">
+            <label class="form-label" for="universe-select">Target Universe</label>
+            <select id="universe-select" class="form-select">
+              <option value="Nifty 50" selected>Nifty 50 (50 Stocks)</option>
+              <option value="Nifty Next 50">Nifty Next 50 (50 Stocks)</option>
+              <option value="Nifty 100">Nifty 100 (100 Stocks)</option>
+              <option value="Nifty F&O">Nifty F&O (~180 Stocks)</option>
+            </select>
+          </div>
+
+          <!-- Individual Stock Selection (Hidden initially) -->
+          <div class="form-group d-none" id="stock-input-group">
+            <label class="form-label" for="stock-symbol">Stock Ticker (NSE)</label>
+            <input type="text" id="stock-symbol" class="form-control" value="RELIANCE" placeholder="e.g. RELIANCE, TCS, INFY">
+            <div class="chip-group">
+              <span class="chip-item" data-symbol="RELIANCE">RELIANCE</span>
+              <span class="chip-item" data-symbol="TCS">TCS</span>
+              <span class="chip-item" data-symbol="INFY">INFY</span>
+              <span class="chip-item" data-symbol="HDFCBANK">HDFCBANK</span>
+              <span class="chip-item" data-symbol="ICICIBANK">ICICIBANK</span>
+            </div>
+          </div>
+
+          <!-- Overall Capital -->
+          <div class="form-group">
+            <label class="form-label" for="total-capital">Overall Capital (Plain Number)</label>
+            <input type="number" id="total-capital" class="form-control" value="1000000" step="10000" min="10000">
+          </div>
+
+          <!-- Max Active Stocks (Portfolio concurrency) -->
+          <div class="form-group" id="max-stocks-group">
+            <label class="form-label" for="max-stocks">Max Concurrent Stocks</label>
+            <input type="number" id="max-stocks" class="form-control" value="5" min="1" max="50">
+          </div>
+
+          <!-- Tranches per Stock -->
+          <div class="form-group">
+            <label class="form-label" for="num-parts">Tranches per Stock</label>
+            <select id="num-parts" class="form-select">
+              <option value="1">1 Tranche</option>
+              <option value="2">2 Tranches</option>
+              <option value="3">3 Tranches</option>
+              <option value="4">4 Tranches</option>
+              <option value="5" selected>5 Tranches (Recommended)</option>
+            </select>
+          </div>
+
+          <!-- Start Date -->
+          <div class="form-group">
+            <label class="form-label" for="start-date">Start Date</label>
+            <input type="date" id="start-date" class="form-control" value="2021-01-01">
+          </div>
+
+          <!-- End Date -->
+          <div class="form-group">
+            <label class="form-label" for="end-date">End Date</label>
+            <input type="date" id="end-date" class="form-control" value="2026-10-11">
+          </div>
+
+          <!-- Profit Target % -->
+          <div class="form-group">
+            <label class="form-label" for="target-pct">Bearish Target %</label>
+            <input type="number" id="target-pct" class="form-control" value="5.0" step="0.5" min="0.5" max="50.0">
+          </div>
+
+          <!-- Bullish Tranche Exit Min Return % p.a. -->
+          <div class="form-group">
+            <label class="form-label" for="bullish-min-return">Bullish Exit Min Return % p.a.</label>
+            <input type="number" id="bullish-min-return" class="form-control" value="15.0" step="0.5" min="0.0" max="100.0">
+            <small style="color: #94a3b8; font-size: 0.75rem;">Simple annual return &ge; X% on 20W Low breakdown</small>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button type="submit" id="run-btn" class="btn-primary">
+            <span id="run-spinner" class="spinner d-none"></span>
+            <span id="run-btn-text">Run Backtest</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Results Section (Visible after execution) -->
+    <section id="results-section" class="d-none">
+      <!-- Executive KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card kpi-emerald">
+          <div class="kpi-title">Total Realized Profit</div>
+          <div class="kpi-value" id="kpi-realized-profit">-</div>
+          <div class="kpi-sub">Trade + Magic + Idle + Dividend</div>
+        </div>
+
+        <div class="kpi-card kpi-cyan">
+          <div class="kpi-title">Trade Realized Profit</div>
+          <div class="kpi-value" id="kpi-trade-profit">-</div>
+          <div class="kpi-sub">From 5% tranche target exits</div>
+        </div>
+
+        <div class="kpi-card kpi-amber">
+          <div class="kpi-title">Magic Profit (20DL)</div>
+          <div class="kpi-value" id="kpi-magic-profit">-</div>
+          <div class="kpi-sub">Rs 500 credited on rolling breakdown</div>
+        </div>
+
+        <div class="kpi-card kpi-purple">
+          <div class="kpi-title">Idle Interest (5% p.a.)</div>
+          <div class="kpi-value" id="kpi-idle-interest">-</div>
+          <div class="kpi-sub">5% p.a. pro rata (1 tranche buffer)</div>
+        </div>
+
+        <div class="kpi-card kpi-gold" id="kpi-card-dividend">
+          <div class="kpi-title">Dividend Income</div>
+          <div class="kpi-value" id="kpi-dividend-income">-</div>
+          <div class="kpi-sub">T-2 settlement eligibility</div>
+        </div>
+
+        <div class="kpi-card" id="kpi-card-unrealized">
+          <div class="kpi-title">Unrealized Open P&L</div>
+          <div class="kpi-value" id="kpi-unrealized-pnl">-</div>
+          <div class="kpi-sub">MTM on active tranches</div>
+        </div>
+
+        <div class="kpi-card kpi-indigo">
+          <div class="kpi-title">Total Portfolio Return</div>
+          <div class="kpi-value" id="kpi-return-pct">-</div>
+          <div class="kpi-sub">Across full capital base</div>
+        </div>
+
+        <div class="kpi-card kpi-emerald">
+          <div class="kpi-title">XIRR %</div>
+          <div class="kpi-value" id="kpi-deployed-xirr">-</div>
+          <div class="kpi-sub">Annualized return on deployed cash</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-title">Win Rate %</div>
+          <div class="kpi-value" id="kpi-win-rate">-</div>
+          <div class="kpi-sub">Target exit accuracy</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-title">Max Drawdown %</div>
+          <div class="kpi-value" id="kpi-drawdown">-</div>
+          <div class="kpi-sub">Peak-to-trough decline</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-title">Trades (Closed / Total)</div>
+          <div class="kpi-value" id="kpi-trades-count">-</div>
+          <div class="kpi-sub">Tranche executions</div>
+        </div>
+      </div>
+
+      <!-- Tabbed Tables Container -->
+      <div class="results-card">
+        <div class="tabs-nav">
+          <button type="button" class="tab-btn active" id="tab-btn-breakdown" data-tab="breakdown">Stock-by-Stock Breakdown</button>
+          <button type="button" class="tab-btn" id="tab-btn-trades" data-tab="trades">Trade Journal</button>
+          <button type="button" class="tab-btn d-none" id="tab-btn-magic" data-tab="magic">Magic Profit Events</button>
+          <button type="button" class="tab-btn d-none" id="tab-btn-dividends" data-tab="dividends">Dividend Events</button>
+        </div>
+
+        <!-- Tab 1: Stock Breakdown (Universe Mode) -->
+        <div id="tab-pane-breakdown" class="tab-pane">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th class="text-center">Total Trades</th>
+                  <th class="text-center">Completed</th>
+                  <th class="text-center">Open</th>
+                  <th class="num-cell">Realized Trade Profit</th>
+                  <th class="num-cell">Magic Profit</th>
+                  <th class="num-cell">Dividend</th>
+                  <th class="num-cell">Total Profit</th>
+                  <th class="num-cell">Win Rate %</th>
+                  <th class="num-cell">Open Invested</th>
+                  <th class="num-cell">Unrealized P&L</th>
+                </tr>
+              </thead>
+              <tbody id="breakdown-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 2: Trade Journal (Both Modes) -->
+        <div id="tab-pane-trades" class="tab-pane d-none">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Trade ID</th>
+                  <th>Symbol</th>
+                  <th class="text-center">Type</th>
+                  <th class="text-center">Slot</th>
+                  <th class="text-center">Buy Date</th>
+                  <th class="num-cell">Buy Price</th>
+                  <th class="text-center">Shares</th>
+                  <th class="num-cell">Invested Amt</th>
+                  <th class="num-cell">Target Price</th>
+                  <th class="text-center">Sell Date</th>
+                  <th class="num-cell">Sell Price</th>
+                  <th class="num-cell">Realized P&L</th>
+                  <th class="num-cell">Return %</th>
+                  <th class="text-center">Holding Days</th>
+                  <th class="text-center">Status</th>
+                  <th class="num-cell">Magic Profit</th>
+                  <th class="num-cell">Dividend</th>
+                </tr>
+              </thead>
+              <tbody id="trades-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 3: Magic Events Log -->
+        <div id="tab-pane-magic" class="tab-pane d-none">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Event ID</th>
+                  <th class="text-center">Date</th>
+                  <th class="text-center">Tranche Trigger</th>
+                  <th class="num-cell">Buy Price</th>
+                  <th class="num-cell">Rolling 20DL</th>
+                  <th class="num-cell">Close Price</th>
+                  <th class="num-cell">Loss %</th>
+                  <th class="num-cell">Profit Credit</th>
+                  <th class="text-center">Open Tranches in Loss</th>
+                </tr>
+              </thead>
+              <tbody id="magic-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 4: Dividends Log -->
+        <div id="tab-pane-dividends" class="tab-pane d-none">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Event ID</th>
+                  <th class="text-center">Ex-Date</th>
+                  <th>Symbol</th>
+                  <th class="text-center">Trade ID</th>
+                  <th class="text-center">Slot</th>
+                  <th class="text-center">Buy Date</th>
+                  <th class="text-center">Shares Held</th>
+                  <th class="num-cell">Dividend / Share</th>
+                  <th class="num-cell">Total Payout</th>
+                </tr>
+              </thead>
+              <tbody id="dividends-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    Weekly 20W Darvas Box Systematic Backtesting Platform &copy; 2026 | All figures in INR (plain numbers) | Zero laptop dependency
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
