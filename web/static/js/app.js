@@ -301,45 +301,46 @@ function formatNum(val, decimals = 2) {
 function renderResults(data) {
   const sum = data.summary;
 
-  // Render KPI Cards
+  // Render KPI Cards (Amounts without decimal points)
   const returnAmt = (sum.total_portfolio_return_amount !== undefined)
     ? sum.total_portfolio_return_amount
     : (Math.round(((sum.total_realized_profit || 0) + (sum.unrealized_pnl || 0)) * 100) / 100);
+  const roundedReturnAmt = Math.round(returnAmt);
   const retAmtEl = document.getElementById('kpi-return-amount');
   const retAmtCard = document.getElementById('kpi-card-return-amt');
   if (retAmtEl) {
-    const prefix = returnAmt > 0 ? '+' : '';
-    retAmtEl.textContent = `${prefix}${formatNum(returnAmt)}`;
+    const prefix = roundedReturnAmt > 0 ? '+' : '';
+    retAmtEl.textContent = `${prefix}${formatNum(roundedReturnAmt, 0)}`;
   }
   if (retAmtCard) {
     retAmtCard.classList.remove('kpi-emerald', 'kpi-rose', 'kpi-indigo');
-    if (returnAmt > 0) {
+    if (roundedReturnAmt > 0) {
       retAmtCard.classList.add('kpi-emerald');
-    } else if (returnAmt < 0) {
+    } else if (roundedReturnAmt < 0) {
       retAmtCard.classList.add('kpi-rose');
     } else {
       retAmtCard.classList.add('kpi-indigo');
     }
   }
 
-  document.getElementById('kpi-realized-profit').textContent = formatNum(sum.total_realized_profit);
-  document.getElementById('kpi-trade-profit').textContent = formatNum(sum.realized_trade_profit);
+  document.getElementById('kpi-realized-profit').textContent = formatNum(Math.round(sum.total_realized_profit || 0), 0);
+  document.getElementById('kpi-trade-profit').textContent = formatNum(Math.round(sum.realized_trade_profit || 0), 0);
   const magicEl = document.getElementById('kpi-magic-profit');
-  if (magicEl) magicEl.textContent = formatNum(sum.total_magic_profit);
+  if (magicEl) magicEl.textContent = formatNum(Math.round(sum.total_magic_profit || 0), 0);
   updateMagicCardVisibility();
-  document.getElementById('kpi-idle-interest').textContent = formatNum(sum.idle_capital_interest);
+  document.getElementById('kpi-idle-interest').textContent = formatNum(Math.round(sum.idle_capital_interest || 0), 0);
 
   const divEl = document.getElementById('kpi-dividend-income');
   if (divEl) {
-    divEl.textContent = formatNum(sum.dividend_income || 0);
+    divEl.textContent = formatNum(Math.round(sum.dividend_income || 0), 0);
   }
 
   const unrlEl = document.getElementById('kpi-unrealized-pnl');
   const unrlCard = document.getElementById('kpi-card-unrealized');
-  const unrlVal = sum.unrealized_pnl || 0;
+  const unrlVal = Math.round(sum.unrealized_pnl || 0);
   if (unrlEl) {
     const prefix = unrlVal > 0 ? '+' : '';
-    unrlEl.textContent = `${prefix}${formatNum(unrlVal)}`;
+    unrlEl.textContent = `${prefix}${formatNum(unrlVal, 0)}`;
   }
   if (unrlCard) {
     unrlCard.classList.remove('kpi-emerald', 'kpi-rose');

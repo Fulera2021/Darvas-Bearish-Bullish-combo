@@ -408,6 +408,12 @@ body {
   color: #fff;
 }
 
+#kpi-return-amount,
+#kpi-return-pct {
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
+}
+
 .kpi-sub {
   font-size: 0.75rem;
   color: var(--text-dim);
