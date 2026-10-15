@@ -220,6 +220,18 @@
           <div class="kpi-value" id="kpi-trades-count">-</div>
           <div class="kpi-sub">Tranche executions</div>
         </div>
+
+        <div class="kpi-card kpi-purple" id="kpi-card-ending-capital">
+          <div class="kpi-title">Ending Overall Capital</div>
+          <div class="kpi-value" id="kpi-ending-capital">-</div>
+          <div class="kpi-sub">Capital + Realized Profit</div>
+        </div>
+
+        <div class="kpi-card kpi-cyan" id="kpi-card-ending-tranche">
+          <div class="kpi-title">Ending Tranche Buy Amount</div>
+          <div class="kpi-value" id="kpi-ending-tranche-amt">-</div>
+          <div class="kpi-sub">Compounded tranche size</div>
+        </div>
       </div>
 
       <!-- Tabbed Tables Container -->
@@ -227,6 +239,7 @@
         <div class="tabs-nav">
           <button type="button" class="tab-btn active" id="tab-btn-breakdown" data-tab="breakdown">Stock-by-Stock Breakdown</button>
           <button type="button" class="tab-btn" id="tab-btn-trades" data-tab="trades">Trade Journal</button>
+          <button type="button" class="tab-btn" id="tab-btn-monthly" data-tab="monthly">Monthly Summary</button>
           <button type="button" class="tab-btn d-none" id="tab-btn-magic" data-tab="magic">Magic Profit Events</button>
           <button type="button" class="tab-btn d-none" id="tab-btn-dividends" data-tab="dividends">Dividend Events</button>
         </div>
@@ -324,6 +337,51 @@
                 </tr>
               </thead>
               <tbody id="dividends-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 5: Monthly Summary (Both Modes) -->
+        <div id="tab-pane-monthly" class="tab-pane d-none">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>
+                    <div class="col-head-title">Year-MMM</div>
+                    <div class="col-head-desc">Calendar Month</div>
+                  </th>
+                  <th class="num-cell">
+                    <div class="col-head-title">Trade Realized</div>
+                    <div class="col-head-desc">Net profit from closed tranches</div>
+                  </th>
+                  <th class="num-cell">
+                    <div class="col-head-title">Magic Profit</div>
+                  </th>
+                  <th class="num-cell">
+                    <div class="col-head-title">Dividend</div>
+                    <div class="col-head-desc">Total dividend credits received</div>
+                  </th>
+                  <th class="num-cell">
+                    <div class="col-head-title">Idle Interest</div>
+                    <div class="col-head-desc">5% p.a. accrued on cash</div>
+                  </th>
+                  <th class="num-cell">
+                    <div class="col-head-title">Total Realized</div>
+                    <div class="col-head-desc">Sum of all realized profits</div>
+                  </th>
+                  <th class="num-cell">
+                    <div class="col-head-title">Max Capital Blocked</div>
+                    <div class="col-head-desc">Peak amount deployed in trades</div>
+                  </th>
+                  <th class="num-cell">
+                    <div class="col-head-title">Monthly Return %</div>
+                    <div class="col-head-desc">Total Realized / Max Blocked</div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="monthly-tbody"></tbody>
+              <tfoot id="monthly-tfoot"></tfoot>
             </table>
           </div>
         </div>

@@ -52,6 +52,7 @@ class BacktestRequest(BaseModel):
     end_date: str = Field(default="2026-10-11")
     target_pct: float = Field(default=5.0, gt=0.0, le=100.0)
     bullish_min_return_pct: float = Field(default=15.0, ge=0.0, le=100.0, description="Minimum simple return % p.a. for Bullish tranche exit")
+    enable_compounding: bool = Field(default=True, description="Enable dynamic compounding into overall capital")
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
@@ -89,6 +90,7 @@ async def execute_backtest(req: BacktestRequest):
             use_20w_low_tracking=True,
             enable_bullish_combo=True,
             bullish_min_return_pct=req.bullish_min_return_pct,
+            enable_compounding=req.enable_compounding,
             start_date=req.start_date,
             end_date=req.end_date
         )
@@ -171,6 +173,24 @@ async def execute_backtest(req: BacktestRequest):
                     "total_payout": round(ev.total_payout, 2)
                 })
 
+            monthly_summary_json = [
+                {
+                    "year_mmm": m.year_mmm,
+                    "trade_realized_profit": round(m.trade_realized_profit, 2),
+                    "magic_profit": round(m.magic_profit, 2),
+                    "dividend_income": round(m.dividend_income, 2),
+                    "idle_interest": round(m.idle_interest, 2),
+                    "total_realized_profit": round(m.total_realized_profit, 2),
+                    "month_end_unrealized": round(m.month_end_unrealized, 2),
+                    "net_monthly_pnl": round(m.net_monthly_pnl, 2),
+                    "max_capital_blocked": round(m.max_capital_blocked, 2),
+                    "monthly_return_pct": round(m.monthly_return_pct, 2),
+                    "max_drawdown_pct": round(m.max_drawdown_pct, 2),
+                    "month_end_drawdown_pct": round(m.month_end_drawdown_pct, 2)
+                }
+                for m in getattr(result, "monthly_summaries", [])
+            ]
+
             return {
                 "run_id": run_id,
                 "mode": "stock",
@@ -193,11 +213,14 @@ async def execute_backtest(req: BacktestRequest):
                     "open_trades": result.open_trades,
                     "win_rate_pct": round(result.win_rate_pct, 2),
                     "max_drawdown_pct": round(result.max_drawdown_pct, 2),
-                    "avg_holding_days": round(result.avg_holding_days, 1)
+                    "avg_holding_days": round(result.avg_holding_days, 1),
+                    "ending_overall_capital": round(result.ending_overall_capital, 2),
+                    "ending_tranche_amount": round(result.ending_tranche_amount, 2)
                 },
                 "trades": trades_json,
                 "magic_events": magic_events_json,
-                "dividend_events": dividend_events_json
+                "dividend_events": dividend_events_json,
+                "monthly_summary": monthly_summary_json
             }
 
         else:
@@ -268,6 +291,24 @@ async def execute_backtest(req: BacktestRequest):
                     "total_payout": round(ev.total_payout, 2)
                 })
 
+            monthly_summary_json = [
+                {
+                    "year_mmm": m.year_mmm,
+                    "trade_realized_profit": round(m.trade_realized_profit, 2),
+                    "magic_profit": round(m.magic_profit, 2),
+                    "dividend_income": round(m.dividend_income, 2),
+                    "idle_interest": round(m.idle_interest, 2),
+                    "total_realized_profit": round(m.total_realized_profit, 2),
+                    "month_end_unrealized": round(m.month_end_unrealized, 2),
+                    "net_monthly_pnl": round(m.net_monthly_pnl, 2),
+                    "max_capital_blocked": round(m.max_capital_blocked, 2),
+                    "monthly_return_pct": round(m.monthly_return_pct, 2),
+                    "max_drawdown_pct": round(m.max_drawdown_pct, 2),
+                    "month_end_drawdown_pct": round(m.month_end_drawdown_pct, 2)
+                }
+                for m in getattr(p_res, "monthly_summaries", [])
+            ]
+
             return {
                 "run_id": run_id,
                 "mode": "universe",
@@ -291,11 +332,14 @@ async def execute_backtest(req: BacktestRequest):
                     "win_rate_pct": round(p_res.win_rate_pct, 2),
                     "total_trades": p_res.total_trades,
                     "completed_trades": p_res.completed_trades,
-                    "open_trades": p_res.open_trades
+                    "open_trades": p_res.open_trades,
+                    "ending_overall_capital": round(p_res.ending_overall_capital, 2),
+                    "ending_tranche_amount": round(p_res.ending_tranche_amount, 2)
                 },
                 "stock_summaries": stock_summaries_json,
                 "trades": trades_json,
-                "dividend_events": dividend_events_json
+                "dividend_events": dividend_events_json,
+                "monthly_summary": monthly_summary_json
             }
 
     except HTTPException:

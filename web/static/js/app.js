@@ -253,10 +253,12 @@ function initForm() {
       payload.universe = document.getElementById('universe-select').value;
     }
 
-    // Set UI loading state
+    // Set UI loading state and hide previous results to avoid confusion
     runBtn.disabled = true;
     spinner.classList.remove('d-none');
     btnText.textContent = state.mode === 'universe' ? 'Simulating Portfolio...' : 'Running Backtest...';
+    document.getElementById('results-section').classList.add('d-none');
+    document.getElementById('download-excel-btn').disabled = true;
 
     try {
       const response = await fetch('/api/backtest', {
@@ -356,6 +358,17 @@ function renderResults(data) {
   document.getElementById('kpi-drawdown').textContent = `${formatNum(sum.max_drawdown_pct)}%`;
   document.getElementById('kpi-trades-count').textContent = `${sum.completed_trades} / ${sum.total_trades}`;
 
+  const endCapEl = document.getElementById('kpi-ending-capital');
+  if (endCapEl) {
+    const endCapVal = sum.ending_overall_capital || (sum.total_capital + (sum.total_realized_profit || 0));
+    endCapEl.textContent = formatNum(Math.round(endCapVal), 0);
+  }
+
+  const endTrancheEl = document.getElementById('kpi-ending-tranche-amt');
+  if (endTrancheEl) {
+    endTrancheEl.textContent = formatNum(Math.round(sum.ending_tranche_amount || 0), 0);
+  }
+
   // Update Dynamic Tab Visibility based on Mode & Events
   const tabBreakdownBtn = document.getElementById('tab-btn-breakdown');
   const tabMagicBtn = document.getElementById('tab-btn-magic');
@@ -367,6 +380,9 @@ function renderResults(data) {
   } else {
     tabDivBtn.classList.add('d-none');
   }
+
+  // Render Monthly Summary for both single stock and universe modes
+  renderMonthlySummary(data.monthly_summary);
 
   if (data.mode === 'universe') {
     tabBreakdownBtn.classList.remove('d-none');
@@ -499,3 +515,66 @@ function renderDividendEvents(events) {
     tbody.appendChild(tr);
   });
 }
+
+function renderMonthlySummary(records) {
+  const tbody = document.getElementById('monthly-tbody');
+  const tfoot = document.getElementById('monthly-tfoot');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (tfoot) tfoot.innerHTML = '';
+
+  if (!records || records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center">No monthly records available</td></tr>';
+    return;
+  }
+
+  let sumTradeRealized = 0;
+  let sumMagicProfit = 0;
+  let sumDividend = 0;
+  let sumIdleInterest = 0;
+  let sumTotalRealized = 0;
+  let peakCapitalBlocked = 0;
+
+  records.forEach(r => {
+    sumTradeRealized += r.trade_realized_profit || 0;
+    sumMagicProfit += r.magic_profit || 0;
+    sumDividend += r.dividend_income || 0;
+    sumIdleInterest += r.idle_interest || 0;
+    sumTotalRealized += r.total_realized_profit || 0;
+    if ((r.max_capital_blocked || 0) > peakCapitalBlocked) peakCapitalBlocked = r.max_capital_blocked;
+
+    const retPct = (r.max_capital_blocked && r.max_capital_blocked > 0)
+      ? (r.total_realized_profit / r.max_capital_blocked) * 100.0
+      : (r.monthly_return_pct || 0.0);
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${r.year_mmm}</strong></td>
+      <td class="num-cell ${(r.trade_realized_profit || 0) >= 0 ? 'text-profit' : 'text-loss'}">${formatNum(r.trade_realized_profit)}</td>
+      <td class="num-cell text-profit">${formatNum(r.magic_profit)}</td>
+      <td class="num-cell text-profit">${formatNum(r.dividend_income)}</td>
+      <td class="num-cell text-profit">${formatNum(r.idle_interest)}</td>
+      <td class="num-cell ${(r.total_realized_profit || 0) >= 0 ? 'text-profit' : 'text-loss'}"><strong>${formatNum(r.total_realized_profit)}</strong></td>
+      <td class="num-cell">${formatNum(r.max_capital_blocked)}</td>
+      <td class="num-cell ${retPct >= 0 ? 'text-profit' : 'text-loss'}"><strong>${retPct >= 0 ? '+' : ''}${formatNum(retPct)}%</strong></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  if (tfoot) {
+    const overallReturnPct = peakCapitalBlocked > 0 ? (sumTotalRealized / peakCapitalBlocked) * 100.0 : 0.0;
+    const trFoot = document.createElement('tr');
+    trFoot.innerHTML = `
+      <td><strong>Total / Peak</strong></td>
+      <td class="num-cell ${sumTradeRealized >= 0 ? 'text-profit' : 'text-loss'}"><strong>${formatNum(sumTradeRealized)}</strong></td>
+      <td class="num-cell text-profit"><strong>${formatNum(sumMagicProfit)}</strong></td>
+      <td class="num-cell text-profit"><strong>${formatNum(sumDividend)}</strong></td>
+      <td class="num-cell text-profit"><strong>${formatNum(sumIdleInterest)}</strong></td>
+      <td class="num-cell ${sumTotalRealized >= 0 ? 'text-profit' : 'text-loss'}"><strong>${formatNum(sumTotalRealized)}</strong></td>
+      <td class="num-cell"><strong>${formatNum(peakCapitalBlocked)}</strong></td>
+      <td class="num-cell ${overallReturnPct >= 0 ? 'text-profit' : 'text-loss'}"><strong>${overallReturnPct >= 0 ? '+' : ''}${formatNum(overallReturnPct)}%</strong></td>
+    `;
+    tfoot.appendChild(trFoot);
+  }
+}
+

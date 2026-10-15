@@ -79,6 +79,8 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
         ("Open Positions", result.open_trades, NUM_FORMAT_INT),
         ("Max Drawdown %", f"{result.max_drawdown_pct:.2f}%", None),
         ("Avg Holding Days", f"{result.avg_holding_days:.1f}", None),
+        ("Ending Overall Capital", getattr(result, "ending_overall_capital", result.initial_capital), NUM_FORMAT_DECIMAL),
+        ("Ending Tranche Buy Amount", getattr(result, "ending_tranche_amount", 0.0), NUM_FORMAT_DECIMAL),
     ]
 
     row_idx = 4
@@ -199,6 +201,9 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
                 if c_idx in [7, 8, 9] and isinstance(val, (int, float)):
                     cell.number_format = NUM_FORMAT_DECIMAL
 
+    # Monthly Summary sheet
+    _build_monthly_summary_sheet(wb, getattr(result, "monthly_summaries", []), result.initial_capital)
+
     # Auto-adjust column widths
     for sheet in wb.worksheets:
         for col in sheet.columns:
@@ -210,6 +215,94 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
     wb.save(buf)
     buf.seek(0)
     return buf
+
+def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list, total_capital: float):
+    if monthly_summaries is None:
+        return
+    ws = wb.create_sheet(title="Monthly Summary")
+    ws.views.sheetView[0].showGridLines = True
+
+    headers = [
+        "Year-MMM\n(Calendar Month)",
+        "Trade Realized\n(Profit from closed tranches)",
+        "Magic Profit",
+        "Dividend\n(Dividend income received)",
+        "Idle Interest\n(5% p.a. accrued on cash)",
+        "Total Realized\n(Sum of realized profits)",
+        "Max Capital Blocked\n(Peak deployed in trades)",
+        "Monthly Return %\n(Total Realized / Max Blocked)"
+    ]
+
+    for c_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=c_idx, value=h)
+        cell.font = FONT_TBL_HEADER
+        cell.fill = FILL_HEADER
+        cell.alignment = Alignment(horizontal="center" if c_idx == 1 else "right", vertical="center", wrap_text=True)
+        cell.border = THIN_BORDER
+    ws.row_dimensions[1].height = 28
+
+    if not monthly_summaries:
+        return
+
+    sum_trade = 0.0
+    sum_magic = 0.0
+    sum_div = 0.0
+    sum_idle = 0.0
+    sum_realized = 0.0
+    peak_blocked = 0.0
+
+    for r_idx, m in enumerate(monthly_summaries, 2):
+        sum_trade += m.trade_realized_profit
+        sum_magic += m.magic_profit
+        sum_div += m.dividend_income
+        sum_idle += m.idle_interest
+        sum_realized += m.total_realized_profit
+        if m.max_capital_blocked > peak_blocked:
+            peak_blocked = m.max_capital_blocked
+
+        m_ret = (m.total_realized_profit / m.max_capital_blocked) if m.max_capital_blocked > 0 else 0.0
+
+        row_data = [
+            m.year_mmm, m.trade_realized_profit, m.magic_profit, m.dividend_income, m.idle_interest,
+            m.total_realized_profit, m.max_capital_blocked, m_ret
+        ]
+        is_even = (r_idx % 2 == 0)
+        for c_idx, val in enumerate(row_data, 1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=val)
+            cell.font = FONT_DATA
+            cell.border = THIN_BORDER
+            if is_even:
+                cell.fill = FILL_ZEBRA
+            if c_idx == 1:
+                cell.alignment = ALIGN_CENTER
+            else:
+                cell.alignment = ALIGN_RIGHT
+                if c_idx == 8:
+                    cell.number_format = "0.00%"
+                else:
+                    cell.number_format = NUM_FORMAT_DECIMAL
+
+    # Summary Footer row
+    tot_row = len(monthly_summaries) + 2
+    overall_ret = (sum_realized / peak_blocked) if peak_blocked > 0 else 0.0
+
+    footer_data = [
+        "Total / Peak", sum_trade, sum_magic, sum_div, sum_idle,
+        sum_realized, peak_blocked, overall_ret
+    ]
+    for c_idx, val in enumerate(footer_data, 1):
+        cell = ws.cell(row=tot_row, column=c_idx, value=val)
+        cell.font = FONT_DATA_BOLD
+        cell.fill = FILL_KPI_BG
+        cell.border = THIN_BORDER
+        if c_idx == 1:
+            cell.alignment = ALIGN_CENTER
+        else:
+            cell.alignment = ALIGN_RIGHT
+            if c_idx == 8:
+                cell.number_format = "0.00%"
+            else:
+                cell.number_format = NUM_FORMAT_DECIMAL
 
 def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
     """Generate in-memory .xlsx workbook for a multi-stock universe backtest."""
@@ -247,6 +340,8 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
         ("Total Trades", result.total_trades, NUM_FORMAT_INT),
         ("Completed Trades", result.completed_trades, NUM_FORMAT_INT),
         ("Open Positions", result.open_trades, NUM_FORMAT_INT),
+        ("Ending Overall Capital", getattr(result, "ending_overall_capital", result.total_capital), NUM_FORMAT_DECIMAL),
+        ("Ending Tranche Buy Amount", getattr(result, "ending_tranche_amount", 0.0), NUM_FORMAT_DECIMAL),
     ]
 
     row_idx = 4
@@ -377,6 +472,9 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
                 cell.alignment = ALIGN_CENTER if c_idx in [1, 2, 3, 4, 5, 6] else ALIGN_RIGHT
                 if c_idx in [7, 8, 9] and isinstance(val, (int, float)):
                     cell.number_format = NUM_FORMAT_DECIMAL
+
+    # Monthly Summary sheet
+    _build_monthly_summary_sheet(wb, getattr(result, "monthly_summaries", []), result.total_capital)
 
     # Auto-adjust column widths
     for sheet in wb.worksheets:

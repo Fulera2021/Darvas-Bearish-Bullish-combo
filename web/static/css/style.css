@@ -501,9 +501,28 @@ body {
   font-weight: 600;
   font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
   border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
+}
+
+.col-head-title {
+  font-weight: 600;
+  font-size: 0.76rem;
+  color: var(--text-main);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.col-head-desc {
+  font-weight: 400;
+  font-size: 0.67rem;
+  color: var(--text-dim);
+  text-transform: none;
+  letter-spacing: normal;
+  margin-top: 0.2rem;
+  line-height: 1.25;
+  white-space: normal;
 }
 
 .data-table td {
@@ -516,6 +535,18 @@ body {
 
 .data-table tr:hover td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+.data-table tfoot tr {
+  background: rgba(17, 24, 39, 0.95);
+  border-top: 2px solid rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+}
+
+.data-table tfoot td {
+  padding: 0.85rem 1rem;
+  color: #fff;
+  border-bottom: none;
 }
 
 .num-cell {

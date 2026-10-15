@@ -59,7 +59,9 @@ def run_single_stock(symbol: str, config: BacktestConfig, output_dir: str) -> Ba
     # 5. Export Excel Workbook
     clean_sym = symbol.replace(".NS", "").replace("^", "")
     os.makedirs(output_dir, exist_ok=True)
-    if config.use_20w_low_tracking:
+    if config.enable_bullish_combo:
+        mode_tag = "Combo"
+    elif config.use_20w_low_tracking:
         mode_tag = "20W_Tracking"
     elif config.enable_magic_profit:
         mode_tag = "Magic"
@@ -85,6 +87,8 @@ def main():
     parser.add_argument("--parts", type=int, default=5, help="Number of capital parts (default: 5)")
     parser.add_argument("--target", type=float, default=0.05, help="Profit target per tranche (default: 0.05 for 5%)")
     parser.add_argument("--buffer", type=float, default=0.005, help="Next week entry price ceiling buffer (default: 0.005 for 0.5%)")
+    parser.add_argument("--combo", action="store_true", help="Enable Darvas Bearish dip buying + Bullish momentum combo")
+    parser.add_argument("--bullish-min-return", type=float, default=15.0, help="Min return % p.a. for bullish tranche exit (default: 15.0)")
     parser.add_argument("--trailing", action="store_true", help="Use weekly trailing low exit (sell at Friday Close if Close < Prev Week Low and in profit)")
     parser.add_argument("--buy-below-last", action="store_true", help="Only buy if signal weekly close is below the last bought tranche's buy price")
     parser.add_argument("--magic", action="store_true", help="Enable magic profit (+500 on 20DL breakdown while in loss, cooldown 30 days)")
@@ -94,7 +98,16 @@ def main():
     
     args = parser.parse_args()
 
-    if args.tracking_20w:
+    enable_bullish = False
+    if args.combo:
+        default_subfolder = "Bearish + Bullish Combo"
+        mode_tag = "Combo"
+        buy_below_last = False
+        enable_magic = False
+        use_trailing = False
+        use_20w_tracking = True
+        enable_bullish = True
+    elif args.tracking_20w:
         default_subfolder = "20W Low Tracking"
         mode_tag = "20W_Tracking"
         buy_below_last = False
@@ -142,6 +155,8 @@ def main():
         buy_only_below_last_tranche=buy_below_last,
         enable_magic_profit=enable_magic,
         use_20w_low_tracking=use_20w_tracking,
+        enable_bullish_combo=enable_bullish,
+        bullish_min_return_pct=args.bullish_min_return,
         start_date=args.start,
         end_date=args.end
     )

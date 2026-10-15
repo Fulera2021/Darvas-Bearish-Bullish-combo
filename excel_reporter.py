@@ -208,6 +208,8 @@ def export_backtest_to_excel(
         buy_str = t.buy_date.strftime("%d-%b-%Y") if t.buy_date is not None else "-"
         sell_str = t.sell_date.strftime("%d-%b-%Y") if t.sell_date is not None else "-"
         ret_val = (t.return_pct / 100.0) if t.return_pct is not None else None
+        tgt_price_val = "20W Low Exit" if t.target_price == float("inf") else t.target_price
+        tgt_price_fmt = "@" if t.target_price == float("inf") else FMT_CURRENCY
 
         if config.enable_magic_profit:
             total_tranche_pnl = (
@@ -226,7 +228,7 @@ def export_backtest_to_excel(
                 (t.buy_price, FMT_CURRENCY, align_right),
                 (t.shares, FMT_QTY, align_right),
                 (t.invested_amt, FMT_CURRENCY, align_right),
-                (t.target_price, FMT_CURRENCY, align_right),
+                (tgt_price_val, tgt_price_fmt, align_right),
                 (sell_str, FMT_DATE, align_center),
                 (t.sell_price if t.sell_price is not None else "-", FMT_CURRENCY if t.sell_price else "@", align_right),
                 (t.realized_pnl if t.realized_pnl is not None else "-", FMT_CURRENCY if t.realized_pnl else "@", align_right),
@@ -247,7 +249,7 @@ def export_backtest_to_excel(
                 (t.buy_price, FMT_CURRENCY, align_right),
                 (t.shares, FMT_QTY, align_right),
                 (t.invested_amt, FMT_CURRENCY, align_right),
-                (t.target_price, FMT_CURRENCY, align_right),
+                (tgt_price_val, tgt_price_fmt, align_right),
                 (sell_str, FMT_DATE, align_center),
                 (t.sell_price if t.sell_price is not None else "-", FMT_CURRENCY if t.sell_price else "@", align_right),
                 (t.realized_pnl if t.realized_pnl is not None else "-", FMT_CURRENCY if t.realized_pnl else "@", align_right),
@@ -380,6 +382,117 @@ def export_backtest_to_excel(
                 if cell.value:
                     max_len = max(max_len, len(str(cell.value)))
             ws_magic.column_dimensions[col_letter].width = max(max_len + 4, 13)
+
+    # ---------------------------------------------------------
+    # Dedicated Monthly Summary Worksheet
+    # ---------------------------------------------------------
+    if getattr(result, "monthly_summaries", None):
+        ws_monthly = wb.create_sheet(title="Monthly Summary")
+        ws_monthly.views.sheetView[0].showGridLines = True
+
+        ws_monthly["B2"] = f"MONTHLY PERFORMANCE SUMMARY — {result.symbol}"
+        ws_monthly["B2"].font = font_title
+        ws_monthly["B3"] = "Realized Profit Breakdown, Capital Blocked, and Monthly Return %"
+        ws_monthly["B3"].font = font_subtitle
+
+        m_tbl_headers = [
+            ("Year-MMM\n(Calendar Month)", align_center),
+            ("Trade Realized\n(Profit from closed tranches)", align_right),
+            ("Magic Profit", align_right),
+            ("Dividend\n(Dividend income received)", align_right),
+            ("Idle Interest\n(5% p.a. accrued on cash)", align_right),
+            ("Total Realized\n(Sum of realized profits)", align_right),
+            ("Max Capital Blocked\n(Peak deployed in trades)", align_right),
+            ("Monthly Return %\n(Total Realized / Max Blocked)", align_right)
+        ]
+
+        m_tbl_start = 5
+        ws_monthly.row_dimensions[m_tbl_start].height = 28
+        for c_idx, (h_title, h_align) in enumerate(m_tbl_headers, start=2):
+            cell = ws_monthly.cell(row=m_tbl_start, column=c_idx, value=h_title)
+            cell.font = font_tbl_header
+            cell.fill = fill_header
+            cell.alignment = Alignment(horizontal=h_align.horizontal, vertical="center", wrap_text=True)
+            cell.border = thin_border
+
+        sum_trade = 0.0
+        sum_magic = 0.0
+        sum_div = 0.0
+        sum_idle = 0.0
+        sum_realized = 0.0
+        peak_blocked = 0.0
+
+        m_row = m_tbl_start + 1
+        for m in result.monthly_summaries:
+            is_zebra = (m_row % 2 == 0)
+            row_fill = fill_zebra if is_zebra else None
+
+            sum_trade += m.trade_realized_profit
+            sum_magic += m.magic_profit
+            sum_div += m.dividend_income
+            sum_idle += m.idle_interest
+            sum_realized += m.total_realized_profit
+            if m.max_capital_blocked > peak_blocked:
+                peak_blocked = m.max_capital_blocked
+
+            m_ret = (m.total_realized_profit / m.max_capital_blocked) if m.max_capital_blocked > 0 else 0.0
+
+            row_data = [
+                (m.year_mmm, "@", align_center),
+                (m.trade_realized_profit, FMT_CURRENCY, align_right),
+                (m.magic_profit, FMT_CURRENCY, align_right),
+                (m.dividend_income, FMT_CURRENCY, align_right),
+                (m.idle_interest, FMT_CURRENCY, align_right),
+                (m.total_realized_profit, FMT_CURRENCY, align_right),
+                (m.max_capital_blocked, FMT_CURRENCY, align_right),
+                (m_ret, FMT_PCT, align_right),
+            ]
+
+            for c_idx, (val, fmt, cell_align) in enumerate(row_data, start=2):
+                cell = ws_monthly.cell(row=m_row, column=c_idx, value=val)
+                cell.font = font_data
+                cell.alignment = cell_align
+                cell.border = thin_border
+                if row_fill:
+                    cell.fill = row_fill
+                if fmt != "@" and isinstance(val, (int, float)):
+                    cell.number_format = fmt
+            m_row += 1
+
+        # Summary footer row
+        overall_ret = (sum_realized / peak_blocked) if peak_blocked > 0 else 0.0
+        footer_data = [
+            ("Total / Peak", "@", align_center),
+            (sum_trade, FMT_CURRENCY, align_right),
+            (sum_magic, FMT_CURRENCY, align_right),
+            (sum_div, FMT_CURRENCY, align_right),
+            (sum_idle, FMT_CURRENCY, align_right),
+            (sum_realized, FMT_CURRENCY, align_right),
+            (peak_blocked, FMT_CURRENCY, align_right),
+            (overall_ret, FMT_PCT, align_right),
+        ]
+        for c_idx, (val, fmt, cell_align) in enumerate(footer_data, start=2):
+            cell = ws_monthly.cell(row=m_row, column=c_idx, value=val)
+            cell.font = font_data_bold
+            cell.fill = fill_kpi_bg
+            cell.alignment = cell_align
+            cell.border = thin_border
+            if fmt != "@" and isinstance(val, (int, float)):
+                cell.number_format = fmt
+
+        ws_monthly.freeze_panes = f"B{m_tbl_start + 1}"
+        for col in ws_monthly.columns:
+            col_letter = get_column_letter(col[0].column)
+            if col[0].column == 1:
+                ws_monthly.column_dimensions[col_letter].width = 3
+                continue
+            max_len = 0
+            for cell in col:
+                if cell.row < m_tbl_start:
+                    continue
+                if cell.value:
+                    max_len = max(max_len, len(str(cell.value)))
+            ws_monthly.column_dimensions[col_letter].width = max(max_len + 4, 13)
 
     try:
         wb.save(output_filepath)

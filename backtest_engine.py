@@ -70,6 +70,21 @@ class PendingOrder:
     target_week: int
 
 @dataclass
+class MonthlySummary:
+    year_mmm: str                    # e.g. "2023-Jan"
+    trade_realized_profit: float     # Realized trade profit
+    magic_profit: float              # Magic profit
+    dividend_income: float           # Dividend income
+    idle_interest: float             # Idle cash interest
+    total_realized_profit: float     # Sum of all realized profits
+    month_end_unrealized: float      # Unrealized P&L at month end
+    net_monthly_pnl: float           # Total realized + change in unrealized
+    max_capital_blocked: float       # Max invested amount in open trades
+    monthly_return_pct: float        # (net_monthly_pnl / total_capital) * 100
+    max_drawdown_pct: float          # Peak drawdown % during the month
+    month_end_drawdown_pct: float = 0.0 # Drawdown % at month end
+
+@dataclass
 class BacktestResult:
     symbol: str
     initial_capital: float
@@ -92,9 +107,12 @@ class BacktestResult:
     total_magic_profit: float = 0.0
     idle_capital_interest: float = 0.0
     dividend_income: float = 0.0
+    ending_overall_capital: float = 0.0
+    ending_tranche_amount: float = 0.0
     dividend_events: List[DividendEvent] = field(default_factory=list)
     magic_events: List[MagicProfitEvent] = field(default_factory=list)
     trades: List[Tranche] = field(default_factory=list)
+    monthly_summaries: List[MonthlySummary] = field(default_factory=list)
 
 def calculate_xirr(cash_flows: List[tuple], guess: float = 0.1, tol: float = 1e-6, max_iter: int = 100) -> float:
     """
@@ -144,6 +162,59 @@ def calculate_xirr(cash_flows: List[tuple], guess: float = 0.1, tol: float = 1e-
         else:
             high = mid
     return round(float(mid) * 100.0, 2)
+
+def generate_monthly_summaries(
+    daily_snapshots: List[dict],
+    total_capital: float
+) -> List[MonthlySummary]:
+    """Aggregates daily performance snapshots into calendar monthly summary records."""
+    if not daily_snapshots:
+        return []
+    
+    from collections import OrderedDict
+    months_map = OrderedDict()
+    for s in daily_snapshots:
+        ym = (s["date"].year, s["date"].month)
+        if ym not in months_map:
+            months_map[ym] = []
+        months_map[ym].append(s)
+        
+    monthly_list = []
+    prev_unrealized = 0.0
+    for (yr, mo), snaps in months_map.items():
+        dt_sample = snaps[0]["date"]
+        year_mmm = dt_sample.strftime("%Y-%b")
+        t_realized = sum(s["trade_realized"] for s in snaps)
+        m_profit = sum(s["magic_profit"] for s in snaps)
+        div_inc = sum(s["dividend"] for s in snaps)
+        idle_int = sum(s["idle_interest"] for s in snaps)
+        tot_realized = t_realized + m_profit + div_inc + idle_int
+        
+        m_end_unrealized = snaps[-1]["unrealized_pnl"]
+        delta_unrealized = m_end_unrealized - prev_unrealized
+        net_monthly_pnl = tot_realized + delta_unrealized
+        max_blocked = max(s["open_invested"] for s in snaps)
+        ret_pct = round((tot_realized / max_blocked) * 100.0, 2) if max_blocked > 0 else 0.0
+        max_dd = round(max(s["drawdown_pct"] for s in snaps), 2)
+        end_dd = round(snaps[-1]["drawdown_pct"], 2)
+        
+        monthly_list.append(MonthlySummary(
+            year_mmm=year_mmm,
+            trade_realized_profit=round(t_realized, 2),
+            magic_profit=round(m_profit, 2),
+            dividend_income=round(div_inc, 2),
+            idle_interest=round(idle_int, 2),
+            total_realized_profit=round(tot_realized, 2),
+            month_end_unrealized=round(m_end_unrealized, 2),
+            net_monthly_pnl=round(net_monthly_pnl, 2),
+            max_capital_blocked=round(max_blocked, 2),
+            monthly_return_pct=ret_pct,
+            max_drawdown_pct=max_dd,
+            month_end_drawdown_pct=end_dd
+        ))
+        prev_unrealized = m_end_unrealized
+        
+    return monthly_list
 
 def run_backtest(
     df_daily: pd.DataFrame,
@@ -204,6 +275,8 @@ def run_backtest(
 
     # Portfolio equity curve tracking for max drawdown calculation
     portfolio_equity_series = []
+    daily_snapshots = []
+    peak_portfolio_equity = config.total_capital
     available_cash = config.total_capital
     cumulative_realized_profit = 0.0
     total_idle_interest_accum = 0.0
@@ -216,6 +289,9 @@ def run_backtest(
         week_last_days[(int(yr), int(wk))] = group["Date"].max()
 
     for idx, day in df_d.iterrows():
+        day_trade_realized = 0.0
+        day_magic_profit = 0.0
+        day_dividend = 0.0
         curr_yr = int(day["iso_year"])
         curr_wk = int(day["iso_week"])
         curr_week_key = (curr_yr, curr_wk)
@@ -248,6 +324,7 @@ def run_backtest(
                     payout = round(tranche.shares * div_per_share, 2)
                     tranche.dividend_total += payout
                     total_dividend_accum += payout
+                    day_dividend += payout
                     available_cash += payout
 
                     div_ev = DividendEvent(
@@ -300,6 +377,7 @@ def run_backtest(
                     tranche.status = "CLOSED"
                     
                     cumulative_realized_profit += tranche.realized_pnl
+                    day_trade_realized += tranche.realized_pnl
                     available_cash += tranche.invested_amt + tranche.realized_pnl
                     
                     del active_tranches[slot_id]
@@ -319,6 +397,7 @@ def run_backtest(
                         magic_event_counter += 1
                         available_cash += config.magic_profit_amount
                         total_magic_profit_accum += config.magic_profit_amount
+                        day_magic_profit += config.magic_profit_amount
                         last_stock_magic_date = day_date
 
                         # Attribute the single 500 credit to the oldest open tranche in loss
@@ -382,7 +461,14 @@ def run_backtest(
                             slot_id = min(available_slots)
                             available_slots.remove(slot_id)
                             
-                            shares = int(config.tranche_capital // buy_price)
+                            # Dynamic compounding tranche capital
+                            if getattr(config, "enable_compounding", True):
+                                current_capital = config.total_capital + cumulative_realized_profit + total_magic_profit_accum + total_dividend_accum
+                                dyn_tranche_capital = current_capital / float(config.num_parts)
+                            else:
+                                dyn_tranche_capital = config.tranche_capital
+
+                            shares = int(dyn_tranche_capital // buy_price)
                             if shares > 0:
                                 trade_counter += 1
                                 invested = round(shares * buy_price, 2)
@@ -432,6 +518,7 @@ def run_backtest(
                             tranche.status = "CLOSED"
                             
                             cumulative_realized_profit += tranche.realized_pnl
+                            day_trade_realized += tranche.realized_pnl
                             available_cash += tranche.invested_amt + tranche.realized_pnl
                             
                             del active_tranches[slot_id]
@@ -467,6 +554,7 @@ def run_backtest(
                                 tranche.status = "CLOSED"
 
                                 cumulative_realized_profit += tranche.realized_pnl
+                                day_trade_realized += tranche.realized_pnl
                                 available_cash += tranche.invested_amt + tranche.realized_pnl
 
                                 del active_tranches[slot_id]
@@ -490,7 +578,13 @@ def run_backtest(
                             available_slots.remove(slot_id)
 
                             buy_price = round(day_close, 2)
-                            shares = int(config.tranche_capital // buy_price)
+                            if getattr(config, "enable_compounding", True):
+                                current_capital = config.total_capital + cumulative_realized_profit + total_magic_profit_accum + total_dividend_accum
+                                dyn_tranche_capital = current_capital / float(config.num_parts)
+                            else:
+                                dyn_tranche_capital = config.tranche_capital
+
+                            shares = int(dyn_tranche_capital // buy_price)
                             if shares > 0:
                                 trade_counter += 1
                                 invested = round(shares * buy_price, 2)
@@ -530,7 +624,13 @@ def run_backtest(
                             available_slots.remove(slot_id)
 
                             buy_price = round(day_close, 2)
-                            shares = int(config.tranche_capital // buy_price)
+                            if getattr(config, "enable_compounding", True):
+                                current_capital = config.total_capital + cumulative_realized_profit + total_magic_profit_accum + total_dividend_accum
+                                dyn_tranche_capital = current_capital / float(config.num_parts)
+                            else:
+                                dyn_tranche_capital = config.tranche_capital
+
+                            shares = int(dyn_tranche_capital // buy_price)
                             if shares > 0:
                                 trade_counter += 1
                                 invested = round(shares * buy_price, 2)
@@ -585,8 +685,16 @@ def run_backtest(
         if day_date >= start_dt_cutoff:
             days_elapsed = (day_date - prev_idle_date).days if prev_idle_date is not None else 1
             open_invested_cash = sum(t.invested_amt for t in active_tranches.values())
-            idle_cash = max(0.0, config.total_capital - open_invested_cash)
-            eligible_idle = max(0.0, idle_cash - untouched_cash_buffer)
+            if getattr(config, "enable_compounding", True):
+                current_overall_capital = config.total_capital + cumulative_realized_profit + total_magic_profit_accum + total_dividend_accum
+                dyn_tranche_cap = current_overall_capital / float(config.num_parts)
+                untouched_buffer = dyn_tranche_cap
+                idle_cash = max(0.0, current_overall_capital - open_invested_cash)
+            else:
+                untouched_buffer = untouched_cash_buffer
+                idle_cash = max(0.0, config.total_capital - open_invested_cash)
+
+            eligible_idle = max(0.0, idle_cash - untouched_buffer)
             daily_interest = eligible_idle * (0.05 / 365.0) * days_elapsed
             total_idle_interest_accum += daily_interest
             prev_idle_date = day_date
@@ -594,6 +702,22 @@ def run_backtest(
             current_open_val = sum(t.shares * day_close for t in active_tranches.values())
             daily_equity = available_cash + current_open_val + total_idle_interest_accum
             portfolio_equity_series.append(daily_equity)
+
+            if daily_equity > peak_portfolio_equity:
+                peak_portfolio_equity = daily_equity
+            day_dd = ((peak_portfolio_equity - daily_equity) / peak_portfolio_equity) * 100.0 if peak_portfolio_equity > 0 else 0.0
+            unrealized_pnl_day = current_open_val - open_invested_cash
+            daily_snapshots.append({
+                "date": day_date,
+                "trade_realized": day_trade_realized,
+                "magic_profit": day_magic_profit,
+                "dividend": day_dividend,
+                "idle_interest": daily_interest,
+                "open_invested": open_invested_cash,
+                "unrealized_pnl": unrealized_pnl_day,
+                "daily_equity": daily_equity,
+                "drawdown_pct": day_dd
+            })
 
     # -----------------------------------------------------------------
     # Compute Final Portfolio Metrics & Max Drawdown
@@ -660,6 +784,13 @@ def run_backtest(
         c_dep.append((ev.ex_date, ev.total_payout))
     deployed_xirr_pct = calculate_xirr(c_dep)
 
+    if getattr(config, "enable_compounding", True):
+        ending_overall_capital = round(config.total_capital + total_realized_profit, 2)
+        ending_tranche_amount = round(ending_overall_capital / float(config.num_parts), 2)
+    else:
+        ending_overall_capital = round(config.total_capital, 2)
+        ending_tranche_amount = round(config.tranche_capital, 2)
+
     return BacktestResult(
         symbol=symbol,
         initial_capital=config.total_capital,
@@ -682,7 +813,10 @@ def run_backtest(
         total_magic_profit=total_magic_profit,
         idle_capital_interest=total_idle_interest,
         dividend_income=total_div_income,
+        ending_overall_capital=ending_overall_capital,
+        ending_tranche_amount=ending_tranche_amount,
         dividend_events=dividend_events,
         magic_events=magic_events,
-        trades=all_trades
+        trades=all_trades,
+        monthly_summaries=generate_monthly_summaries(daily_snapshots, config.total_capital)
     )

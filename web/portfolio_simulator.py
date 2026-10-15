@@ -9,7 +9,7 @@ import numpy as np
 
 from config import BacktestConfig
 from data_loader import build_weekly_data, add_weekly_signals
-from backtest_engine import Tranche, MagicProfitEvent, DividendEvent, calculate_xirr
+from backtest_engine import Tranche, MagicProfitEvent, DividendEvent, calculate_xirr, MonthlySummary, generate_monthly_summaries
 from web.cache_manager import ensure_symbol_data, ensure_symbol_dividends, DEFAULT_DB_PATH
 from web.universe_data import normalize_symbol
 
@@ -48,10 +48,13 @@ class PortfolioBacktestResult:
     total_trades: int = 0
     completed_trades: int = 0
     open_trades: int = 0
+    ending_overall_capital: float = 0.0
+    ending_tranche_amount: float = 0.0
     stock_summaries: List[StockSummary] = field(default_factory=list)
     trades: List[Tranche] = field(default_factory=list)
     magic_events: List[MagicProfitEvent] = field(default_factory=list)
     dividend_events: List[DividendEvent] = field(default_factory=list)
+    monthly_summaries: List[MonthlySummary] = field(default_factory=list)
 
 def run_portfolio_universe_simulation(
     symbols: List[str],
@@ -137,6 +140,8 @@ def run_portfolio_universe_simulation(
             total_trades=0,
             completed_trades=0,
             open_trades=0,
+            ending_overall_capital=config.total_capital,
+            ending_tranche_amount=tranche_capital,
             stock_summaries=[],
             trades=[],
             magic_events=[]
@@ -185,9 +190,13 @@ def run_portfolio_universe_simulation(
     untouched_cash_buffer = tranche_capital * max_active_stocks
     peak_portfolio_value = config.total_capital
     max_drawdown_pct = 0.0
+    daily_snapshots = []
 
     # 2. Step through each trading date
     for current_date in all_dates:
+        day_trade_realized = 0.0
+        day_magic_profit = 0.0
+        day_dividend = 0.0
         # A0. Check Dividends across all open tranches (T-2 Rule)
         for sym, t_list in list(open_tranches.items()):
             if not t_list:
@@ -212,6 +221,7 @@ def run_portfolio_universe_simulation(
                         payout = round(tr.shares * div_per_share, 2)
                         tr.dividend_total += payout
                         cumulative_dividend_income += payout
+                        day_dividend += payout
                         deployed_cash_flows.append((current_date, payout))
 
                         d_ev = DividendEvent(
@@ -255,6 +265,7 @@ def run_portfolio_universe_simulation(
                     tr.return_pct = round(((tr.sell_price / tr.buy_price) - 1.0) * 100.0, 2)
 
                     cumulative_realized_profit += tr.realized_pnl
+                    day_trade_realized += tr.realized_pnl
                     deployed_cash_flows.append((current_date, tr.shares * tr.sell_price))
                 else:
                     remaining_tranches.append(tr)
@@ -280,6 +291,7 @@ def run_portfolio_universe_simulation(
                                 # Credit 500 magic profit once
                                 credit = config.magic_profit_amount
                                 cumulative_magic_profit += credit
+                                day_magic_profit += credit
                                 last_magic_date[sym] = current_date
                                 deployed_cash_flows.append((current_date, credit))
 
@@ -336,6 +348,7 @@ def run_portfolio_universe_simulation(
                                 tr.years_held = round(years_held, 2)
 
                                 cumulative_realized_profit += tr.realized_pnl
+                                day_trade_realized += tr.realized_pnl
                                 deployed_cash_flows.append((current_date, tr.shares * tr.sell_price))
                             else:
                                 surviving.append(tr)
@@ -377,8 +390,8 @@ def run_portfolio_universe_simulation(
                         pct_breakout = (w_close - p_high) / p_high if p_high > 0 else 0.0
                         buy_candidates.append((sym, pct_breakout, "BEARISH"))
 
-            # Sort buy candidates by breakout strength descending
-            buy_candidates.sort(key=lambda x: x[1], reverse=True)
+            # Sort buy candidates by breakout strength ascending (give preference to least risen)
+            buy_candidates.sort(key=lambda x: x[1], reverse=False)
 
             # 3. Evaluate and execute buys respecting max_active_stocks and tranche limits
             if current_date >= start_dt_cutoff:
@@ -409,7 +422,14 @@ def run_portfolio_universe_simulation(
                     if buy_price <= 0:
                         continue
 
-                    shares = int(tranche_capital // buy_price)
+                    # Dynamic compounding tranche capital
+                    if getattr(config, "enable_compounding", True):
+                        current_overall_capital = config.total_capital + cumulative_realized_profit + cumulative_magic_profit + cumulative_dividend_income
+                        current_tranche_capital = current_overall_capital / float(max_active_stocks * config.num_parts)
+                    else:
+                        current_tranche_capital = tranche_capital
+
+                    shares = int(current_tranche_capital // buy_price)
                     if shares <= 0:
                         shares = 1
 
@@ -443,8 +463,17 @@ def run_portfolio_universe_simulation(
             total_open_invested = sum(
                 t.invested_amt for trs in open_tranches.values() for t in trs
             )
-            idle_cash = max(0.0, config.total_capital - total_open_invested)
-            eligible_idle = max(0.0, idle_cash - untouched_cash_buffer)
+            if getattr(config, "enable_compounding", True):
+                current_overall_capital = config.total_capital + cumulative_realized_profit + cumulative_magic_profit + cumulative_dividend_income
+                dyn_tranche_cap = current_overall_capital / float(max_active_stocks * config.num_parts)
+                untouched_buffer = dyn_tranche_cap * max_active_stocks
+                idle_cash = max(0.0, current_overall_capital - total_open_invested)
+            else:
+                current_overall_capital = config.total_capital
+                untouched_buffer = untouched_cash_buffer
+                idle_cash = max(0.0, config.total_capital - total_open_invested)
+
+            eligible_idle = max(0.0, idle_cash - untouched_buffer)
             daily_interest = eligible_idle * (0.05 / 365.0) * days_elapsed
             cumulative_idle_interest += daily_interest
             prev_idle_date = current_date
@@ -462,6 +491,18 @@ def run_portfolio_universe_simulation(
             dd = ((peak_portfolio_value - total_portfolio_equity) / peak_portfolio_value) * 100.0
             if dd > max_drawdown_pct:
                 max_drawdown_pct = round(dd, 2)
+
+            daily_snapshots.append({
+                "date": current_date,
+                "trade_realized": day_trade_realized,
+                "magic_profit": day_magic_profit,
+                "dividend": day_dividend,
+                "idle_interest": daily_interest,
+                "open_invested": total_open_invested,
+                "unrealized_pnl": current_unrealized,
+                "daily_equity": total_portfolio_equity,
+                "drawdown_pct": dd
+            })
 
     # 3. Final Portfolio valuation & XIRR
     end_date = all_dates[-1]
@@ -522,8 +563,12 @@ def run_portfolio_universe_simulation(
             dividend_income=round(s_dividends, 2)
         ))
 
-    # Sort stock summaries by total profit descending
-    stock_summaries.sort(key=lambda s: s.total_profit, reverse=True)
+    if getattr(config, "enable_compounding", True):
+        ending_overall_capital = round(config.total_capital + total_realized_profit, 2)
+        ending_tranche_amount = round(ending_overall_capital / float(max_active_stocks * config.num_parts), 2)
+    else:
+        ending_overall_capital = round(config.total_capital, 2)
+        ending_tranche_amount = round(tranche_capital, 2)
 
     return PortfolioBacktestResult(
         total_capital=config.total_capital,
@@ -543,8 +588,11 @@ def run_portfolio_universe_simulation(
         total_trades=len(all_trades),
         completed_trades=len(completed_trades),
         open_trades=len(open_trades_list),
+        ending_overall_capital=ending_overall_capital,
+        ending_tranche_amount=ending_tranche_amount,
         stock_summaries=stock_summaries,
         trades=all_trades,
         magic_events=all_magic_events,
-        dividend_events=all_dividend_events
+        dividend_events=all_dividend_events,
+        monthly_summaries=generate_monthly_summaries(daily_snapshots, config.total_capital)
     )

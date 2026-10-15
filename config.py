@@ -34,6 +34,7 @@ class BacktestConfig:
     # Bearish + Bullish Combo parameters
     enable_bullish_combo: bool = False  # Reserve 1 tranche for 20W high breakout with simple annual return exit rule
     bullish_min_return_pct: float = 15.0 # Minimum simple profit % per annum required to exit bullish tranche on 20W low breakdown
+    enable_compounding: bool = True     # Reinvest realized profits/dividends into overall capital dynamically
 
     # Historical date range
     start_date: str = "2021-01-01"
