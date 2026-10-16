@@ -10,7 +10,11 @@ from web.universe_data import get_universe_symbols, normalize_symbol, get_all_un
 class TestUniverseData(unittest.TestCase):
     def test_normalize_symbol(self):
         self.assertEqual(normalize_symbol("RELIANCE"), "RELIANCE.NS")
+        self.assertEqual(normalize_symbol("NSE:RELIANCE"), "RELIANCE.NS")
+        self.assertEqual(normalize_symbol("nse:reliance"), "RELIANCE.NS")
+        self.assertEqual(normalize_symbol("NSE: RELIANCE"), "RELIANCE.NS")
         self.assertEqual(normalize_symbol("TCS.NS"), "TCS.NS")
+        self.assertEqual(normalize_symbol("NSE:TCS.NS"), "TCS.NS")
         self.assertEqual(normalize_symbol("infy"), "INFY.NS")
         self.assertEqual(normalize_symbol("^NSEI"), "^NSEI")
 

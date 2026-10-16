@@ -219,6 +219,10 @@ body {
   gap: 0.4rem;
 }
 
+.start-date-group {
+  grid-column: 1;
+}
+
 .form-label {
   font-size: 0.8rem;
   font-weight: 500;
@@ -279,7 +283,7 @@ body {
   display: flex;
   gap: 0.4rem;
   margin-top: 0.35rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .chip-item {

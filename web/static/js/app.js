@@ -30,6 +30,13 @@ function getYesterdayDateStr() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function getDefaultStartDateStr() {
+  const d = new Date();
+  const yyyy = d.getFullYear() - 1;
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${yyyy}-${mm}-01`;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initVariantToggle();
   initModeToggle();
@@ -67,6 +74,8 @@ function initModeToggle() {
   const stockGroup = document.getElementById('stock-input-group');
   const universeGroup = document.getElementById('universe-input-group');
   const maxStocksGroup = document.getElementById('max-stocks-group');
+  const capInput = document.getElementById('total-capital');
+  const startInput = document.getElementById('start-date');
 
   btns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -78,12 +87,29 @@ function initModeToggle() {
         stockGroup.classList.remove('d-none');
         universeGroup.classList.add('d-none');
         maxStocksGroup.classList.add('d-none');
+
+        // Populate Individual Stock defaults
+        if (capInput) {
+          capInput.value = formatIndianNumber(40000);
+        }
+        if (startInput) {
+          startInput.value = getDefaultStartDateStr();
+        }
       } else {
         stockGroup.classList.add('d-none');
         universeGroup.classList.remove('d-none');
         maxStocksGroup.classList.remove('d-none');
+
+        // Restore Universe defaults if currently on stock defaults
+        if (capInput && parseIndianNumber(capInput.value) === 40000) {
+          capInput.value = formatIndianNumber(1000000);
+        }
+        if (startInput && startInput.value === getDefaultStartDateStr()) {
+          startInput.value = '2021-01-01';
+        }
       }
       updateTrancheCalcBox();
+      updateTimePeriodBox();
     });
   });
 }

@@ -13,8 +13,11 @@ def fetch_daily_data(symbol: str, start_date: str, end_date: str) -> pd.DataFram
     Returns a clean DataFrame with columns: ['Date', 'Open', 'High', 'Low', 'Close', 'Volume'].
     """
     logger.info(f"Downloading daily data for {symbol} from {start_date} to {end_date}...")
-    # Add .NS suffix if not already present and not an index like ^NSEI
-    ticker = symbol if symbol.endswith(".NS") or symbol.startswith("^") else f"{symbol}.NS"
+    clean_sym = symbol.strip().upper()
+    for prefix in ("NSE:", "BSE:"):
+        if clean_sym.startswith(prefix):
+            clean_sym = clean_sym[len(prefix):].strip()
+    ticker = clean_sym if clean_sym.endswith(".NS") or clean_sym.endswith(".BO") or clean_sym.startswith("^") else f"{clean_sym}.NS"
     
     df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, progress=False)
     if df.empty:
@@ -45,7 +48,11 @@ def fetch_dividend_data(symbol: str) -> pd.DataFrame:
     Fetch historical corporate dividend distributions for the specified symbol via yfinance.
     Returns DataFrame with columns ['Date', 'Dividend'] where Date is normalized to midnight.
     """
-    ticker = symbol if symbol.endswith(".NS") or symbol.startswith("^") else f"{symbol}.NS"
+    clean_sym = symbol.strip().upper()
+    for prefix in ("NSE:", "BSE:"):
+        if clean_sym.startswith(prefix):
+            clean_sym = clean_sym[len(prefix):].strip()
+    ticker = clean_sym if clean_sym.endswith(".NS") or clean_sym.endswith(".BO") or clean_sym.startswith("^") else f"{clean_sym}.NS"
     try:
         t = yf.Ticker(ticker)
         divs = t.dividends

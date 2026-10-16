@@ -62,8 +62,11 @@ UNIVERSES: Dict[str, List[str]] = {
 }
 
 def normalize_symbol(symbol: str) -> str:
-    """Normalize input stock ticker to standard NSE format (e.g. RELIANCE -> RELIANCE.NS)."""
+    """Normalize input stock ticker to standard NSE format (e.g. RELIANCE, NSE:RELIANCE -> RELIANCE.NS)."""
     s = symbol.strip().upper()
+    for prefix in ("NSE:", "BSE:"):
+        if s.startswith(prefix):
+            s = s[len(prefix):].strip()
     if s.startswith("^") or s.endswith(".NS") or s.endswith(".BO"):
         return s
     return f"{s}.NS"

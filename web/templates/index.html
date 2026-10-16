@@ -83,13 +83,10 @@
           <!-- Individual Stock Selection (Hidden initially) -->
           <div class="form-group d-none" id="stock-input-group">
             <label class="form-label" for="stock-symbol">Stock Ticker (NSE)</label>
-            <input type="text" id="stock-symbol" class="form-control" value="RELIANCE" placeholder="e.g. RELIANCE, TCS, INFY">
+            <input type="text" id="stock-symbol" class="form-control" value="RELIANCE" placeholder="e.g. RELIANCE, NSE:RELIANCE">
             <div class="chip-group">
               <span class="chip-item" data-symbol="RELIANCE">RELIANCE</span>
-              <span class="chip-item" data-symbol="TCS">TCS</span>
-              <span class="chip-item" data-symbol="INFY">INFY</span>
-              <span class="chip-item" data-symbol="HDFCBANK">HDFCBANK</span>
-              <span class="chip-item" data-symbol="ICICIBANK">ICICIBANK</span>
+              <span class="chip-item" data-symbol="NSE:RELIANCE">NSE:RELIANCE</span>
             </div>
           </div>
 
@@ -117,7 +114,7 @@
           </div>
 
           <!-- Start Date -->
-          <div class="form-group">
+          <div class="form-group start-date-group">
             <label class="form-label" for="start-date">Start Date</label>
             <input type="date" id="start-date" class="form-control" value="2021-01-01">
           </div>
