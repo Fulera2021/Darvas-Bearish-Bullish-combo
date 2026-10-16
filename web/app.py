@@ -99,7 +99,7 @@ async def execute_backtest(req: BacktestRequest):
             if not req.symbol:
                 raise HTTPException(status_code=400, detail="Stock symbol must be specified.")
             norm_sym = normalize_symbol(req.symbol)
-            warmup_start_dt = (pd.to_datetime(req.start_date) - pd.Timedelta(days=180)).strftime("%Y-%m-%d")
+            warmup_start_dt = (pd.to_datetime(req.start_date) - pd.Timedelta(days=365)).strftime("%Y-%m-%d")
             df_daily = ensure_symbol_data(norm_sym, warmup_start_dt, req.end_date, DEFAULT_DB_PATH)
             if df_daily is None or df_daily.empty:
                 raise HTTPException(status_code=404, detail=f"No price data available for {norm_sym}.")

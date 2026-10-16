@@ -131,10 +131,16 @@ def ensure_symbol_data(symbol: str, start_date: str, end_date: str, db_path: str
             needs_download = True
             
     if needs_download:
-        logger.info(f"Downloading {norm_symbol} from yfinance for range {start_date} to {end_date}...")
-        fresh_df = fetch_daily_data(norm_symbol, start_date, end_date)
-        save_daily_data_to_cache(norm_symbol, fresh_df, db_path)
-        return fresh_df
+        try:
+            logger.info(f"Downloading {norm_symbol} from yfinance for range {start_date} to {end_date}...")
+            fresh_df = fetch_daily_data(norm_symbol, start_date, end_date)
+            save_daily_data_to_cache(norm_symbol, fresh_df, db_path)
+            return fresh_df
+        except Exception as e:
+            if cached_df is not None and not cached_df.empty:
+                logger.warning(f"Could not download fresh data for {norm_symbol} ({e}), falling back to cached data.")
+                return cached_df
+            raise
         
     return cached_df
 

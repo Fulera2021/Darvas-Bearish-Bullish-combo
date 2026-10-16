@@ -82,7 +82,7 @@ def run_portfolio_universe_simulation(
     stock_data: Dict[str, Dict[str, pd.DataFrame]] = {}
     all_dates_set: Set[pd.Timestamp] = set()
 
-    warmup_start_dt = (pd.to_datetime(config.start_date) - pd.Timedelta(days=180)).strftime("%Y-%m-%d")
+    warmup_start_dt = (pd.to_datetime(config.start_date) - pd.Timedelta(days=365)).strftime("%Y-%m-%d")
     for sym in norm_symbols:
         try:
             df_daily = ensure_symbol_data(sym, warmup_start_dt, config.end_date, db_path)
@@ -150,12 +150,27 @@ def run_portfolio_universe_simulation(
     # Sorted list of all trading dates across the universe
     all_dates = sorted(list(all_dates_set))
 
+    start_dt_cutoff = pd.to_datetime(config.start_date)
+
     # Tracking states
     # Symbol -> List of open Tranche
     open_tranches: Dict[str, List[Tranche]] = {s: [] for s in stock_data}
     is_tracking_20w: Dict[str, bool] = {s: False for s in stock_data}
     last_magic_date: Dict[str, Optional[pd.Timestamp]] = {s: None for s in stock_data}
     last_known_close: Dict[str, float] = {s: 0.0 for s in stock_data}
+
+    # Cold start: initialize tracking state from weekly history prior to start_dt_cutoff
+    for s in stock_data:
+        w_df_sym = stock_data[s]["weekly_signals"]
+        prior_w = w_df_sym[w_df_sym["Week_End"] < start_dt_cutoff].sort_values("Week_End")
+        for _, pw_row in prior_w.iterrows():
+            pw_c = float(pw_row["Close"])
+            pw_r20l = pw_row.get("rolling_20w_low")
+            pw_r20h = pw_row.get("rolling_20w_high")
+            if not is_tracking_20w[s] and pd.notna(pw_r20l) and pw_c < float(pw_r20l):
+                is_tracking_20w[s] = True
+            if pd.notna(pw_r20h) and pw_c > float(pw_r20h):
+                is_tracking_20w[s] = False
 
     all_trades: List[Tranche] = []
     all_magic_events: List[MagicProfitEvent] = []
@@ -172,7 +187,6 @@ def run_portfolio_universe_simulation(
                 weekly_events_by_date[w_end] = []
             weekly_events_by_date[w_end].append((sym, w_row))
 
-    start_dt_cutoff = pd.to_datetime(config.start_date)
     # Daily cash flows for XIRR
     portfolio_cash_flows: List[Tuple[pd.Timestamp, float]] = [
         (start_dt_cutoff, -config.total_capital)

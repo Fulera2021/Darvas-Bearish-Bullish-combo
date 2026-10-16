@@ -263,6 +263,19 @@ def run_backtest(
     last_stock_magic_date: Optional[pd.Timestamp] = None
     is_tracking_20w: bool = False
 
+    # Cold start: initialize tracking state from weekly history prior to start_dt_cutoff if available
+    if config.use_20w_low_tracking or config.enable_bullish_combo:
+        prior_w = df_w[df_w["Week_End"] < start_dt_cutoff].sort_values("Week_End")
+        for _, pw_row in prior_w.iterrows():
+            pw_c = float(pw_row["Close"])
+            pw_r20l = pw_row.get("rolling_20w_low")
+            pw_r20h = pw_row.get("rolling_20w_high")
+            if not is_tracking_20w:
+                if pd.notna(pw_r20l) and pw_c < float(pw_r20l):
+                    is_tracking_20w = True
+            if pd.notna(pw_r20h) and pw_c > float(pw_r20h):
+                is_tracking_20w = False
+
     # Dividend distribution tracking
     dividend_events: List[DividendEvent] = []
     dividend_id_seq = 1

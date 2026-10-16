@@ -10,7 +10,7 @@ from datetime import datetime
 import pandas as pd
 
 from config import BacktestConfig
-from data_loader import fetch_daily_data, build_weekly_data, add_weekly_signals
+from data_loader import fetch_daily_data, fetch_dividend_data, build_weekly_data, add_weekly_signals
 from backtest_engine import run_backtest, BacktestResult
 from excel_reporter import export_backtest_to_excel
 
@@ -21,18 +21,28 @@ def run_single_stock(symbol: str, config: BacktestConfig, output_dir: str) -> Ba
     """Runs the strategy backtest on a single stock and generates an Excel workbook."""
     logger.info(f"=== Starting Backtest for {symbol} ({config.start_date} to {config.end_date}) ===")
     
-    # 1. Fetch Daily Data
-    df_daily = fetch_daily_data(symbol, config.start_date, config.end_date)
-    logger.info(f"Loaded {len(df_daily)} daily bars.")
+    # 1. Fetch Daily Data with 365-day warmup for rolling calculations and cold start
+    warmup_start_dt = (pd.to_datetime(config.start_date) - pd.Timedelta(days=365)).strftime("%Y-%m-%d")
+    df_daily = fetch_daily_data(symbol, warmup_start_dt, config.end_date)
+    logger.info(f"Loaded {len(df_daily)} daily bars (warmup from {warmup_start_dt}).")
 
     # 2. Resample to Weekly and Compute Breakout Signals
     df_weekly = build_weekly_data(df_daily)
-    df_weekly = add_weekly_signals(df_weekly, entry_buffer_pct=config.entry_buffer_pct)
+    df_weekly = add_weekly_signals(
+        df_weekly,
+        entry_buffer_pct=config.entry_buffer_pct,
+        use_trend_filter=config.use_trend_filter,
+        trend_ema_period=config.trend_ema_period,
+        darvas_box_weeks=config.darvas_box_weeks
+    )
     signals_count = int(df_weekly["breakout_signal"].sum())
     logger.info(f"Resampled to {len(df_weekly)} weekly bars. Detected {signals_count} breakout signals.")
 
+    # Fetch dividends if available
+    df_div = fetch_dividend_data(symbol)
+
     # 3. Run Event-Driven Simulator
-    result = run_backtest(df_daily, df_weekly, config, symbol=symbol)
+    result = run_backtest(df_daily, df_weekly, config, symbol=symbol, df_dividends=df_div)
 
     # 4. Print Summary Console Output (Plain numbers, no rupee symbols)
     print("\n" + "=" * 65)
