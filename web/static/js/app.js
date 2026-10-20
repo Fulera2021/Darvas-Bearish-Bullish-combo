@@ -69,6 +69,30 @@ function updateMagicCardVisibility() {
   }
 }
 
+const UNIVERSE_MAX_LIMITS = {
+  'Nifty 50': 50,
+  'Nifty Next 50': 50,
+  'Nifty 100': 100,
+  'Nifty F&O': 200
+};
+
+function updateUniverseMaxLimit() {
+  const universeSelect = document.getElementById('universe-select');
+  const maxStocksInput = document.getElementById('max-stocks');
+  if (!universeSelect || !maxStocksInput) return;
+
+  const selectedUniverse = universeSelect.value;
+  const maxLimit = UNIVERSE_MAX_LIMITS[selectedUniverse] || 200;
+  maxStocksInput.max = maxLimit;
+
+  // If switched to a smaller universe and current input exceeds its universe size, clamp it
+  const currentVal = parseInt(maxStocksInput.value, 10);
+  if (currentVal > maxLimit) {
+    maxStocksInput.value = maxLimit;
+    updateTrancheCalcBox();
+  }
+}
+
 function initModeToggle() {
   const btns = document.querySelectorAll('.mode-toggle-btn');
   const stockGroup = document.getElementById('stock-input-group');
@@ -107,6 +131,7 @@ function initModeToggle() {
         if (startInput && startInput.value === getDefaultStartDateStr()) {
           startInput.value = '2021-01-01';
         }
+        updateUniverseMaxLimit();
       }
       updateTrancheCalcBox();
       updateTimePeriodBox();
@@ -234,6 +259,16 @@ function initForm() {
       updateTrancheCalcBox();
     });
   }
+
+  // Dynamic universe max stocks limit and listeners for live recalculation
+  const universeSelect = document.getElementById('universe-select');
+  if (universeSelect) {
+    universeSelect.addEventListener('change', () => {
+      updateUniverseMaxLimit();
+      updateTrancheCalcBox();
+    });
+  }
+  updateUniverseMaxLimit();
 
   // Listeners for live recalculation of per tranche buy amount box
   document.getElementById('num-parts')?.addEventListener('change', updateTrancheCalcBox);

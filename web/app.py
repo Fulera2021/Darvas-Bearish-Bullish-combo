@@ -46,7 +46,7 @@ class BacktestRequest(BaseModel):
     symbol: Optional[str] = Field(default="RELIANCE", description="Ticker symbol for individual stock")
     universe: Optional[str] = Field(default="Nifty 50", description="Universe name")
     total_capital: float = Field(default=1000000.0, ge=1000.0)
-    max_active_stocks: int = Field(default=25, ge=1, le=50)
+    max_active_stocks: int = Field(default=25, ge=1, le=250)
     num_parts: int = Field(default=4, ge=2, le=5)
     start_date: str = Field(default="2021-01-01")
     end_date: str = Field(default="2026-10-11")
