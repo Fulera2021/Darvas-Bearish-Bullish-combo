@@ -184,6 +184,7 @@ async def execute_backtest(req: BacktestRequest):
                     "month_end_unrealized": round(m.month_end_unrealized, 2),
                     "net_monthly_pnl": round(m.net_monthly_pnl, 2),
                     "max_capital_blocked": round(m.max_capital_blocked, 2),
+                    "idle_unused_cash": round(getattr(m, "idle_unused_cash", 0.0), 2),
                     "monthly_return_pct": round(m.monthly_return_pct, 2),
                     "max_drawdown_pct": round(m.max_drawdown_pct, 2),
                     "month_end_drawdown_pct": round(m.month_end_drawdown_pct, 2)
@@ -302,6 +303,7 @@ async def execute_backtest(req: BacktestRequest):
                     "month_end_unrealized": round(m.month_end_unrealized, 2),
                     "net_monthly_pnl": round(m.net_monthly_pnl, 2),
                     "max_capital_blocked": round(m.max_capital_blocked, 2),
+                    "idle_unused_cash": round(getattr(m, "idle_unused_cash", 0.0), 2),
                     "monthly_return_pct": round(m.monthly_return_pct, 2),
                     "max_drawdown_pct": round(m.max_drawdown_pct, 2),
                     "month_end_drawdown_pct": round(m.month_end_drawdown_pct, 2)

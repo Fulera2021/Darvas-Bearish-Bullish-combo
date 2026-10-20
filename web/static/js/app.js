@@ -585,7 +585,7 @@ function renderMonthlySummary(records) {
   if (tfoot) tfoot.innerHTML = '';
 
   if (!records || records.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center">No monthly records available</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center">No monthly records available</td></tr>';
     return;
   }
 
@@ -617,6 +617,7 @@ function renderMonthlySummary(records) {
       <td class="num-cell text-profit">${formatNum(r.idle_interest)}</td>
       <td class="num-cell ${(r.total_realized_profit || 0) >= 0 ? 'text-profit' : 'text-loss'}"><strong>${formatNum(r.total_realized_profit)}</strong></td>
       <td class="num-cell">${formatNum(r.max_capital_blocked)}</td>
+      <td class="num-cell">${formatNum(r.idle_unused_cash)}</td>
       <td class="num-cell ${retPct >= 0 ? 'text-profit' : 'text-loss'}"><strong>${retPct >= 0 ? '+' : ''}${formatNum(retPct)}%</strong></td>
     `;
     tbody.appendChild(tr);
@@ -624,6 +625,7 @@ function renderMonthlySummary(records) {
 
   if (tfoot) {
     const overallReturnPct = peakCapitalBlocked > 0 ? (sumTotalRealized / peakCapitalBlocked) * 100.0 : 0.0;
+    const latestIdleCash = (records.length > 0) ? (records[records.length - 1].idle_unused_cash || 0) : 0;
     const trFoot = document.createElement('tr');
     trFoot.innerHTML = `
       <td><strong>Total / Peak</strong></td>
@@ -633,6 +635,7 @@ function renderMonthlySummary(records) {
       <td class="num-cell text-profit"><strong>${formatNum(sumIdleInterest)}</strong></td>
       <td class="num-cell ${sumTotalRealized >= 0 ? 'text-profit' : 'text-loss'}"><strong>${formatNum(sumTotalRealized)}</strong></td>
       <td class="num-cell"><strong>${formatNum(peakCapitalBlocked)}</strong></td>
+      <td class="num-cell"><strong>${formatNum(latestIdleCash)}</strong></td>
       <td class="num-cell ${overallReturnPct >= 0 ? 'text-profit' : 'text-loss'}"><strong>${overallReturnPct >= 0 ? '+' : ''}${formatNum(overallReturnPct)}%</strong></td>
     `;
     tfoot.appendChild(trFoot);

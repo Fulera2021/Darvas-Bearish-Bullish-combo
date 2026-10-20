@@ -83,6 +83,7 @@ class MonthlySummary:
     monthly_return_pct: float        # (net_monthly_pnl / total_capital) * 100
     max_drawdown_pct: float          # Peak drawdown % during the month
     month_end_drawdown_pct: float = 0.0 # Drawdown % at month end
+    idle_unused_cash: float = 0.0    # Idle unused cash at month end
 
 @dataclass
 class BacktestResult:
@@ -197,6 +198,10 @@ def generate_monthly_summaries(
         ret_pct = round((tot_realized / max_blocked) * 100.0, 2) if max_blocked > 0 else 0.0
         max_dd = round(max(s["drawdown_pct"] for s in snaps), 2)
         end_dd = round(snaps[-1]["drawdown_pct"], 2)
+        if "idle_cash" in snaps[-1]:
+            m_end_idle_cash = snaps[-1]["idle_cash"]
+        else:
+            m_end_idle_cash = max(0.0, total_capital - snaps[-1].get("open_invested", max_blocked))
         
         monthly_list.append(MonthlySummary(
             year_mmm=year_mmm,
@@ -210,7 +215,8 @@ def generate_monthly_summaries(
             max_capital_blocked=round(max_blocked, 2),
             monthly_return_pct=ret_pct,
             max_drawdown_pct=max_dd,
-            month_end_drawdown_pct=end_dd
+            month_end_drawdown_pct=end_dd,
+            idle_unused_cash=round(m_end_idle_cash, 2)
         ))
         prev_unrealized = m_end_unrealized
         
@@ -727,6 +733,7 @@ def run_backtest(
                 "dividend": day_dividend,
                 "idle_interest": daily_interest,
                 "open_invested": open_invested_cash,
+                "idle_cash": idle_cash,
                 "unrealized_pnl": unrealized_pnl_day,
                 "daily_equity": daily_equity,
                 "drawdown_pct": day_dd

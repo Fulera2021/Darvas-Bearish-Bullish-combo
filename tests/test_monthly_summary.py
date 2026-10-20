@@ -75,6 +75,7 @@ class TestMonthlySummary(unittest.TestCase):
         # Monthly return % = (3750 / 75000) * 100 = 5.0%
         self.assertAlmostEqual(jan.monthly_return_pct, 5.0)
         self.assertAlmostEqual(jan.max_drawdown_pct, 1.8)
+        self.assertAlmostEqual(jan.idle_unused_cash, 25000.0)
 
         # Verify Feb 2023
         feb = summaries[1]
@@ -88,6 +89,7 @@ class TestMonthlySummary(unittest.TestCase):
         # Monthly return % = (780 / 40000) * 100 = 1.95%
         self.assertAlmostEqual(feb.monthly_return_pct, 1.95)
         self.assertAlmostEqual(feb.max_drawdown_pct, 0.8)
+        self.assertAlmostEqual(feb.idle_unused_cash, 60000.0)
 
     def test_single_stock_monthly_summary_generated(self):
         daily_records = []
@@ -170,6 +172,7 @@ class TestMonthlySummary(unittest.TestCase):
         self.assertIn("total_realized_profit", item)
         self.assertIn("net_monthly_pnl", item)
         self.assertIn("max_capital_blocked", item)
+        self.assertIn("idle_unused_cash", item)
         self.assertIn("monthly_return_pct", item)
         self.assertIn("max_drawdown_pct", item)
 

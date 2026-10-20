@@ -230,6 +230,7 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
         "Idle Interest\n(5% p.a. accrued on cash)",
         "Total Realized\n(Sum of realized profits)",
         "Max Capital Blocked\n(Peak deployed in trades)",
+        "Idle Unused Cash\n(Uninvested cash buffer)",
         "Monthly Return %\n(Total Realized / Max Blocked)"
     ]
 
@@ -261,10 +262,11 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
             peak_blocked = m.max_capital_blocked
 
         m_ret = (m.total_realized_profit / m.max_capital_blocked) if m.max_capital_blocked > 0 else 0.0
+        idle_cash = getattr(m, "idle_unused_cash", 0.0)
 
         row_data = [
             m.year_mmm, m.trade_realized_profit, m.magic_profit, m.dividend_income, m.idle_interest,
-            m.total_realized_profit, m.max_capital_blocked, m_ret
+            m.total_realized_profit, m.max_capital_blocked, idle_cash, m_ret
         ]
         is_even = (r_idx % 2 == 0)
         for c_idx, val in enumerate(row_data, 1):
@@ -277,7 +279,7 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
                 cell.alignment = ALIGN_CENTER
             else:
                 cell.alignment = ALIGN_RIGHT
-                if c_idx == 8:
+                if c_idx == 9:
                     cell.number_format = "0.00%"
                 else:
                     cell.number_format = NUM_FORMAT_DECIMAL
@@ -285,10 +287,11 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
     # Summary Footer row
     tot_row = len(monthly_summaries) + 2
     overall_ret = (sum_realized / peak_blocked) if peak_blocked > 0 else 0.0
+    latest_idle = getattr(monthly_summaries[-1], "idle_unused_cash", 0.0) if monthly_summaries else 0.0
 
     footer_data = [
         "Total / Peak", sum_trade, sum_magic, sum_div, sum_idle,
-        sum_realized, peak_blocked, overall_ret
+        sum_realized, peak_blocked, latest_idle, overall_ret
     ]
     for c_idx, val in enumerate(footer_data, 1):
         cell = ws.cell(row=tot_row, column=c_idx, value=val)
@@ -299,7 +302,7 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
             cell.alignment = ALIGN_CENTER
         else:
             cell.alignment = ALIGN_RIGHT
-            if c_idx == 8:
+            if c_idx == 9:
                 cell.number_format = "0.00%"
             else:
                 cell.number_format = NUM_FORMAT_DECIMAL

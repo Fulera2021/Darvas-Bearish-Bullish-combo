@@ -403,6 +403,7 @@ def export_backtest_to_excel(
             ("Idle Interest\n(5% p.a. accrued on cash)", align_right),
             ("Total Realized\n(Sum of realized profits)", align_right),
             ("Max Capital Blocked\n(Peak deployed in trades)", align_right),
+            ("Idle Unused Cash\n(Uninvested cash buffer)", align_right),
             ("Monthly Return %\n(Total Realized / Max Blocked)", align_right)
         ]
 
@@ -436,6 +437,7 @@ def export_backtest_to_excel(
                 peak_blocked = m.max_capital_blocked
 
             m_ret = (m.total_realized_profit / m.max_capital_blocked) if m.max_capital_blocked > 0 else 0.0
+            idle_cash = getattr(m, "idle_unused_cash", 0.0)
 
             row_data = [
                 (m.year_mmm, "@", align_center),
@@ -445,6 +447,7 @@ def export_backtest_to_excel(
                 (m.idle_interest, FMT_CURRENCY, align_right),
                 (m.total_realized_profit, FMT_CURRENCY, align_right),
                 (m.max_capital_blocked, FMT_CURRENCY, align_right),
+                (idle_cash, FMT_CURRENCY, align_right),
                 (m_ret, FMT_PCT, align_right),
             ]
 
@@ -461,6 +464,7 @@ def export_backtest_to_excel(
 
         # Summary footer row
         overall_ret = (sum_realized / peak_blocked) if peak_blocked > 0 else 0.0
+        latest_idle = getattr(result.monthly_summaries[-1], "idle_unused_cash", 0.0) if result.monthly_summaries else 0.0
         footer_data = [
             ("Total / Peak", "@", align_center),
             (sum_trade, FMT_CURRENCY, align_right),
@@ -469,6 +473,7 @@ def export_backtest_to_excel(
             (sum_idle, FMT_CURRENCY, align_right),
             (sum_realized, FMT_CURRENCY, align_right),
             (peak_blocked, FMT_CURRENCY, align_right),
+            (latest_idle, FMT_CURRENCY, align_right),
             (overall_ret, FMT_PCT, align_right),
         ]
         for c_idx, (val, fmt, cell_align) in enumerate(footer_data, start=2):

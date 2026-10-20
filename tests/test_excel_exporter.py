@@ -116,7 +116,8 @@ class TestExcelExporter(unittest.TestCase):
             max_capital_blocked=40000.0,
             monthly_return_pct=4.5,
             max_drawdown_pct=2.1,
-            month_end_drawdown_pct=1.0
+            month_end_drawdown_pct=1.0,
+            idle_unused_cash=60000.0
         )
         res = BacktestResult(
             symbol="INFY.NS",
@@ -152,8 +153,9 @@ class TestExcelExporter(unittest.TestCase):
         self.assertEqual(ws.cell(row=1, column=3).value, "Magic Profit")
         self.assertIn("Total Realized", ws.cell(row=1, column=6).value)
         self.assertIn("Max Capital Blocked", ws.cell(row=1, column=7).value)
-        self.assertIn("Monthly Return %", ws.cell(row=1, column=8).value)
-        self.assertIsNone(ws.cell(row=1, column=9).value)
+        self.assertIn("Idle Unused Cash", ws.cell(row=1, column=8).value)
+        self.assertIn("Monthly Return %", ws.cell(row=1, column=9).value)
+        self.assertIsNone(ws.cell(row=1, column=10).value)
 
         # Check data row
         self.assertEqual(ws.cell(row=2, column=1).value, "2023-Jan")
@@ -161,14 +163,16 @@ class TestExcelExporter(unittest.TestCase):
         self.assertEqual(ws.cell(row=2, column=3).value, 500.0)
         self.assertEqual(ws.cell(row=2, column=6).value, 3300.0)
         self.assertEqual(ws.cell(row=2, column=7).value, 40000.0)
+        self.assertEqual(ws.cell(row=2, column=8).value, 60000.0)
         # Monthly return = 3300 / 40000 = 0.0825
-        self.assertAlmostEqual(ws.cell(row=2, column=8).value, 0.0825)
+        self.assertAlmostEqual(ws.cell(row=2, column=9).value, 0.0825)
 
         # Check summary footer row
         self.assertEqual(ws.cell(row=3, column=1).value, "Total / Peak")
         self.assertEqual(ws.cell(row=3, column=6).value, 3300.0)
         self.assertEqual(ws.cell(row=3, column=7).value, 40000.0)
-        self.assertAlmostEqual(ws.cell(row=3, column=8).value, 0.0825)
+        self.assertEqual(ws.cell(row=3, column=8).value, 60000.0)
+        self.assertAlmostEqual(ws.cell(row=3, column=9).value, 0.0825)
 
 if __name__ == "__main__":
     unittest.main()

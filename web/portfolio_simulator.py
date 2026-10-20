@@ -513,6 +513,7 @@ def run_portfolio_universe_simulation(
                 "dividend": day_dividend,
                 "idle_interest": daily_interest,
                 "open_invested": total_open_invested,
+                "idle_cash": idle_cash,
                 "unrealized_pnl": current_unrealized,
                 "daily_equity": total_portfolio_equity,
                 "drawdown_pct": dd
