@@ -6,3 +6,10 @@ output/
 .coverage
 htmlcov/
 *.log
+
+# Local database caches (exceeds GitHub 100MB limit)
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/price_cache.db*

@@ -43,6 +43,13 @@ def init_db(db_path: str = DEFAULT_DB_PATH):
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_dividends_symbol_date ON stock_dividends (symbol, date);")
+    
+    # Purge any non-historical / dummy ticker symbols
+    excluded_symbols = ('BAGMANE.NS', 'BAGMANE', 'DUMMYHEG.NS', 'DUMMYHEG')
+    placeholders = ','.join('?' for _ in excluded_symbols)
+    cursor.execute(f"DELETE FROM daily_prices WHERE symbol IN ({placeholders})", excluded_symbols)
+    cursor.execute(f"DELETE FROM stock_dividends WHERE symbol IN ({placeholders})", excluded_symbols)
+    
     conn.commit()
     conn.close()
 

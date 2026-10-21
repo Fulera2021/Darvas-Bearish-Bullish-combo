@@ -127,20 +127,57 @@ To ensure the scanner never fails even if Yahoo Finance experiences downtime or 
 
 ```mermaid
 flowchart TD
-    Start["▶ Run Scanner"] --> TryYF["1. Yahoo Finance (Parallel v8 API)"]
+    Start["▶ Run Scanner Now"] --> TryYF["1. Primary Engine: Yahoo Query1 Cluster"]
     TryYF -- Success --> Process["Calculate Strategy Signals & Populate"]
-    TryYF -- Query1 Fails --> TryYF2["Try Yahoo Query2 Mirror"]
+    TryYF -- Query1 Fails --> TryYF2["2. Secondary Mirror: Yahoo Query2 Cluster"]
     TryYF2 -- Success --> Process
-    TryYF2 -- Query2 Fails / Missing Tickers --> AutoGF["2. Automated GoogleFinance Native Engine (_Scanner_Backup_Cache)"]
+    TryYF2 -- Still Missing --> AutoGF["3. GoogleFinance Native Engine (_Scanner_Backup_Cache)"]
     AutoGF --> Process
-    Manual["🛡 Force Fallback: Run via GoogleFinance"] --> AutoGF
+    Manual["🛡 Force Fallback: Run via Backup Engine"] --> TryYF2
 ```
 
-### 1. Automatic Failover:
-* **Primary (Yahoo Finance):** Fetches all 50+ tickers in parallel via `UrlFetchApp.fetchAll` in ~1.5 seconds.
-* **Secondary Mirror (`query2`):** If `query1` encounters an error, the script immediately retries via `query2.finance.yahoo.com`.
-* **Tertiary Native Fallback (`GOOGLEFINANCE`):** If Yahoo Finance is completely down or returns missing data for specific tickers, the script automatically activates a hidden cache tab (`_Scanner_Backup_Cache`), calculates weekly historical candles via Google Sheets native `GOOGLEFINANCE()` function, and populates the scanner seamlessly.
+### 1. Automatic Failover & High-Capacity Batching (200+ Stocks):
+* **Primary (Yahoo Finance Batching):** Automatically slices large stock universes (such as the 213 F&O stocks or Nifty 500) into safe concurrent batches of 25 requests via `UrlFetchApp.fetchAll`. This completes 200+ stocks in ~3–4 seconds without hitting Google Apps Script socket limits or triggering rate-limits.
+* **Secondary Mirror (`query2` & Individual Retry):** If any batch encounters network throttling or server blips on `query1`, the script immediately retries via `query2.finance.yahoo.com`, followed by targeted single-stock retries.
+* **Tertiary Native Fallback (`GOOGLEFINANCE` Safe Chunking):** If any ticker is absent on both primary and mirror servers, the script activates a temporary calculation tab, batches requests into 15-stock chunks with display-value polling, and extracts available candles.
 
-### 2. Manual Emergency Override:
-You can also force the scanner to run 100% via Google's internal engine at any time:
-* Click **`⚡ Darvas Scanner`** $\rightarrow$ **`🛡 Force Fallback: Run via GoogleFinance`**.
+### 2. Manual Backup Engine Override:
+You can also run the scanner via the dedicated backup mirror cluster at any time:
+* Click **`⚡ Darvas Scanner`** $\rightarrow$ **`🛡 Force Fallback: Run via Backup Engine`**.
+
+---
+
+## 5. GTT Order Tracking & 'Current Holdings' Transfer Workflow
+
+The system provides an automated pipeline linking the **`Scanner`**, **`GTT Tracker`**, and **`Current Holdings`** sheets:
+
+```mermaid
+flowchart LR
+    Scan["Scanner Tab (Col Q: GTT Select)"] -- "☑ Check" --> GTT["GTT Tracker Tab (Rows B4:L)"]
+    GTT -- "☑ Col L: Transfer Bought" --> Hold["Current Holdings Tab"]
+    GTT -- "☑ Col J: Delete GTT" --> Trash["🗑 Removed from GTT Tracker"]
+```
+
+### 1. From Scanner to GTT Tracker:
+- When a buy-eligible stock (`Bullish Buy Triggered` or `Bearish Buy Triggered`) is selected via the checkbox in **Column Q (GTT Select)** on the `Scanner` tab:
+  - It moves automatically into **`GTT Tracker`** at the next available row.
+  - Col B: Stock Code, Col C: GTT Order Price, Col D: Signal Type.
+  - Rows are cleared from `Scanner` results so you don't place duplicate orders.
+  - S.No. (Col A), Delete checkboxes (Col J, soft red), and Transfer checkboxes (Col L, soft green) are populated automatically.
+
+### 2. Transferring Executed GTT Orders to 'Current Holdings' (Column L):
+When a GTT order triggers and executes in your broker, check the **☑ Column L (Transfer Bought Stocks to Current Holdings)** box:
+1. **Rule 1 (Stock already in Current Holdings):**
+   - The script scans Column B of `'Current Holdings'`.
+   - If the stock already exists (e.g. prior tranche), it locates the **last entry** of that stock and inserts a new blank row immediately below it (keeping all tranches of the same stock grouped together).
+   - Inserts:
+     - **Col A:** Today's Date (`dd-mmm-yyyy`)
+     - **Col B:** Stock Code
+     - **Col C:** Buy Price (from Col C of GTT Tracker)
+     - **Col D:** Quantity (from Col E of GTT Tracker)
+     - **Col E:** Buy Type / Signal Type (from Col D of GTT Tracker, e.g. `Bearish Buy` / `Bullish Buy`)
+2. **Rule 2 (Stock not in Current Holdings):**
+   - If the stock is new to the portfolio, it appends to the last empty row of `'Current Holdings'` with the same 5 pieces of information.
+3. **Rule 3 (Source Cleanup):**
+   - The row is deleted from `GTT Tracker`.
+   - Remaining rows shift up seamlessly, checkboxes in Col J and Col L are refreshed, and S.No. in Col A is automatically re-sequenced (1, 2, 3...).

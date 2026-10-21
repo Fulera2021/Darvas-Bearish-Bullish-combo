@@ -54,12 +54,31 @@ NIFTY_FNO = sorted(list(set(NIFTY_100 + [
     "TORNTPOWER.NS", "UBL.NS", "VOLTAS.NS"
 ])))
 
+# Load Nifty 500 constituents if available
+import os
+import json
+from pathlib import Path
+
+EXCLUDED_NIFTY500 = {"BAGMANE.NS", "BAGMANE", "DUMMYHEG.NS", "DUMMYHEG"}
+
+NIFTY500_FILE = Path(__file__).parent.parent / "data" / "nifty500_symbols.json"
+NIFTY_500: List[str] = []
+if NIFTY500_FILE.exists():
+    try:
+        with open(NIFTY500_FILE, "r", encoding="utf-8") as _f:
+            raw_symbols = json.load(_f)
+            NIFTY_500 = [s for s in raw_symbols if s not in EXCLUDED_NIFTY500 and s.replace(".NS", "") not in EXCLUDED_NIFTY500]
+    except Exception:
+        pass
+
 UNIVERSES: Dict[str, List[str]] = {
     "Nifty 50": NIFTY_50,
     "Nifty Next 50": NIFTY_NEXT_50,
     "Nifty 100": NIFTY_100,
     "Nifty F&O": NIFTY_FNO
 }
+if NIFTY_500:
+    UNIVERSES["Nifty 500"] = NIFTY_500
 
 def normalize_symbol(symbol: str) -> str:
     """Normalize input stock ticker to standard NSE format (e.g. RELIANCE, NSE:RELIANCE -> RELIANCE.NS)."""
