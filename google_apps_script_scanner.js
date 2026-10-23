@@ -78,6 +78,16 @@ const GTT_CONFIG = {
   DEST_DATA_START_ROW: 8      // Starting data row in Current Holdings
 };
 
+const HOLDINGS_CONFIG = {
+  SHEET_NAME: 'Current Holdings',
+  DATA_START_ROW: 8,          // Row 8 onwards (Row 7 is hidden formula dummy row)
+  SELL_DATE_COL: 9,           // Column I: Sell Date
+  MOVE_CHK_COL: 16,           // Column P: Move to Sold tab checkbox
+  COPY_COLS_COUNT: 10,        // Columns A to J (1 to 10)
+  SOLD_SHEET_NAME: 'Sold',    // Destination tab
+  SOLD_DATA_START_ROW: 5      // First data row in Sold tab (Row 5 onwards)
+};
+
 /**
  * Creates custom menu when Google Sheet is opened.
  */
@@ -92,9 +102,17 @@ function onOpen() {
     .addItem('🗑 Remove Automated Trigger', 'removeWeeklyTrigger')
     .addSeparator()
     .addItem('📋 Setup / Refresh GTT Tracker Tab', 'setupGttTrackerSheet')
+    .addItem('🔄 Auto-Populate All Checkboxes (All Tabs)', 'refreshAllSheetCheckboxes')
     .addSeparator()
     .addItem('ℹ About Scanner & Rules', 'showAboutDialog')
     .addToUi();
+
+  // Auto-refresh checkboxes across all tabs when spreadsheet is opened
+  try {
+    refreshAllSheetCheckboxes();
+  } catch (openErr) {
+    // Suppress if onOpen permissions are restricted
+  }
 }
 
 /**
@@ -628,12 +646,70 @@ function onEdit(e) {
     }
 
     // -----------------------------------------------------------------------
-    // BRANCH D: GTT Tracker tab — Ticker code entered/edited in Col B
+    // BRANCH D: GTT Tracker tab — any data edit auto-refreshes checkboxes
     // -----------------------------------------------------------------------
     if (sheetName === GTT_CONFIG.SHEET_NAME &&
-      editedCol === GTT_CONFIG.TICKER_COL &&
-      editedRow >= GTT_CONFIG.DATA_START_ROW) {
+      editedRow >= GTT_CONFIG.DATA_START_ROW &&
+      editedCol !== GTT_CONFIG.DELETE_CHK_COL &&
+      editedCol !== GTT_CONFIG.TRANSFER_CHK_COL) {
       refreshGttCheckboxes(sheet);
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // BRANCH E: Current Holdings tab — Col P (Move to Sold tab) checked
+    // -----------------------------------------------------------------------
+    if (sheetName === HOLDINGS_CONFIG.SHEET_NAME &&
+      editedCol === HOLDINGS_CONFIG.MOVE_CHK_COL &&
+      editedRow >= HOLDINGS_CONFIG.DATA_START_ROW &&
+      e.value === 'TRUE') {
+
+      // Ensure destination 'Sold' sheet exists
+      let soldSheet = ss.getSheetByName(HOLDINGS_CONFIG.SOLD_SHEET_NAME);
+      if (!soldSheet) {
+        soldSheet = ss.insertSheet(HOLDINGS_CONFIG.SOLD_SHEET_NAME);
+        // Copy headers from Current Holdings Row 6 (Cols A-J) to Row 4 of Sold if newly created
+        const headerVals = sheet.getRange(6, 1, 1, HOLDINGS_CONFIG.COPY_COLS_COUNT).getValues();
+        soldSheet.getRange(4, 1, 1, HOLDINGS_CONFIG.COPY_COLS_COUNT).setValues(headerVals).setFontWeight('bold');
+      }
+
+      // 1. Read row data for Col A to Col J (Columns 1 to 10)
+      const rowValues = sheet.getRange(editedRow, 1, 1, HOLDINGS_CONFIG.COPY_COLS_COUNT).getValues();
+      const ticker = String(rowValues[0][1] || '').trim(); // Stock code from Col B
+
+      // 2. Find first empty row in Sold tab (Row 5 onwards)
+      const nextSoldRow = getFirstEmptyRowInSoldTab(soldSheet);
+
+      // 3. Paste as VALUES in first empty row of Sold tab in Col A-J (strictly values, no formatting)
+      soldSheet.getRange(nextSoldRow, 1, 1, HOLDINGS_CONFIG.COPY_COLS_COUNT).setValues(rowValues);
+
+      // 4. Delete the entire row from source tab ('Current Holdings')
+      sheet.deleteRow(editedRow);
+
+      // 5. Refresh checkboxes for remaining rows in Current Holdings
+      refreshCurrentHoldingsCheckboxes(sheet);
+
+      ss.toast(`✅ Moved ${ticker || 'row'} to '${HOLDINGS_CONFIG.SOLD_SHEET_NAME}' tab (Row ${nextSoldRow}).`, 'Moved to Sold', 4);
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // BRANCH F: Current Holdings tab — any data edit auto-refreshes checkboxes
+    // -----------------------------------------------------------------------
+    if (sheetName === HOLDINGS_CONFIG.SHEET_NAME &&
+      editedRow >= HOLDINGS_CONFIG.DATA_START_ROW &&
+      editedCol !== HOLDINGS_CONFIG.MOVE_CHK_COL) {
+      refreshCurrentHoldingsCheckboxes(sheet);
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // BRANCH G: Scanner tab — any data edit auto-refreshes checkboxes
+    // -----------------------------------------------------------------------
+    if (sheetName === CONFIG.SHEET_NAME &&
+      editedRow >= CONFIG.OUTPUT_START_ROW &&
+      editedCol !== CONFIG.GTT_SELECT_COL) {
+      refreshScannerGttCheckboxes(sheet);
       return;
     }
 
@@ -836,6 +912,163 @@ function refreshGttCheckboxes(gttSheet) {
  */
 function refreshGttDeleteCheckboxes(gttSheet) {
   refreshGttCheckboxes(gttSheet);
+}
+
+/**
+ * In tab 'Current Holdings', populates checkboxes in Col P (rows 8 onwards)
+ * wherever the cell in Col I (Sell Date) is not blank.
+ * If Col I is blank, removes any checkbox from Col P.
+ *
+ * @param {SpreadsheetApp.Sheet} [holdingsSheet] Optional sheet object.
+ */
+function refreshCurrentHoldingsCheckboxes(holdingsSheet) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = holdingsSheet || ss.getSheetByName(HOLDINGS_CONFIG.SHEET_NAME);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < HOLDINGS_CONFIG.DATA_START_ROW) return;
+
+  const numRows = lastRow - HOLDINGS_CONFIG.DATA_START_ROW + 1;
+  const colIValues = sheet.getRange(HOLDINGS_CONFIG.DATA_START_ROW, HOLDINGS_CONFIG.SELL_DATE_COL, numRows, 1).getValues();
+  const colPRange = sheet.getRange(HOLDINGS_CONFIG.DATA_START_ROW, HOLDINGS_CONFIG.MOVE_CHK_COL, numRows, 1);
+  const colPValues = colPRange.getValues();
+
+  const checkboxValidation = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+  const validations = [];
+  const newPValues = [];
+
+  for (let i = 0; i < numRows; i++) {
+    const valI = colIValues[i][0];
+    const isNotBlank = (valI !== '' && valI !== null && valI !== undefined);
+    const currentVal = colPValues[i][0];
+
+    if (isNotBlank) {
+      validations.push([checkboxValidation]);
+      newPValues.push([currentVal === true || currentVal === 'TRUE' ? true : false]);
+    } else {
+      validations.push([null]);
+      newPValues.push(['']);
+    }
+  }
+
+  colPRange.setDataValidations(validations);
+  colPRange.setValues(newPValues);
+}
+
+/**
+ * Menu wrapper to refresh Move-to-Sold checkboxes in Current Holdings tab.
+ */
+function refreshCurrentHoldingsCheckboxesMenu() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(HOLDINGS_CONFIG.SHEET_NAME);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert(`Sheet '${HOLDINGS_CONFIG.SHEET_NAME}' was not found.`);
+    return;
+  }
+  refreshCurrentHoldingsCheckboxes(sheet);
+  ss.toast('✅ Checkboxes refreshed in Col P (Move to Sold tab).', 'Checkboxes Updated', 3);
+}
+
+/**
+ * Finds the first empty row in the 'Sold' tab starting from row 5 onwards.
+ * A row is considered empty if Column A (Buy Date) and Column B (Stock Code) are both blank.
+ *
+ * @param {SpreadsheetApp.Sheet} soldSheet
+ * @returns {number} 1-indexed row number (>= 5)
+ */
+function getFirstEmptyRowInSoldTab(soldSheet) {
+  const startRow = HOLDINGS_CONFIG.SOLD_DATA_START_ROW; // Row 5
+  const maxRows = soldSheet.getMaxRows();
+  if (maxRows < startRow) {
+    soldSheet.insertRowsAfter(maxRows, startRow - maxRows + 10);
+  }
+
+  const numToCheck = soldSheet.getMaxRows() - startRow + 1;
+  const values = soldSheet.getRange(startRow, 1, numToCheck, 2).getValues();
+
+  for (let i = 0; i < values.length; i++) {
+    const colA = values[i][0];
+    const colB = values[i][1];
+    const isColABlank = (colA === '' || colA === null || colA === undefined);
+    const isColBBlank = (colB === '' || colB === null || colB === undefined);
+
+    if (isColABlank && isColBBlank) {
+      return startRow + i;
+    }
+  }
+
+  soldSheet.insertRowAfter(soldSheet.getMaxRows());
+  return soldSheet.getMaxRows();
+}
+
+/**
+ * Refreshes GTT Select checkboxes in Column Q of the Scanner tab for all rows
+ * where Column K is 'Bullish Buy Triggered' or 'Bearish Buy Triggered'.
+ *
+ * @param {SpreadsheetApp.Sheet} [scannerSheet]
+ */
+function refreshScannerGttCheckboxes(scannerSheet) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = scannerSheet || ss.getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < CONFIG.OUTPUT_START_ROW) return;
+
+  const numRows = lastRow - CONFIG.OUTPUT_START_ROW + 1;
+  const statusValues = sheet.getRange(CONFIG.OUTPUT_START_ROW, 11, numRows, 1).getValues(); // Col K: Buy Signal
+  const colQRange = sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.GTT_SELECT_COL, numRows, 1);
+  const colQValues = colQRange.getValues();
+
+  const checkboxValidation = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+  const validations = [];
+  const newQValues = [];
+
+  for (let i = 0; i < numRows; i++) {
+    const status = String(statusValues[i][0] || '').trim();
+    const isBuyEligible = (status === 'Bullish Buy Triggered' || status === 'Bearish Buy Triggered');
+    const currentVal = colQValues[i][0];
+
+    if (isBuyEligible) {
+      validations.push([checkboxValidation]);
+      newQValues.push([currentVal === true || currentVal === 'TRUE' ? true : false]);
+    } else {
+      validations.push([null]);
+      newQValues.push(['']);
+    }
+  }
+
+  colQRange.setDataValidations(validations);
+  colQRange.setValues(newQValues);
+}
+
+/**
+ * Refreshes and auto-populates checkboxes across all sheets in the workbook:
+ * 1. Scanner tab (Col Q: wherever Col K is 'Bullish Buy Triggered' or 'Bearish Buy Triggered')
+ * 2. GTT Tracker tab (Col J & Col L: wherever Col B is not blank)
+ * 3. Current Holdings tab (Col P: wherever Col I is not blank)
+ */
+function refreshAllSheetCheckboxes() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. Scanner tab
+  const scanSheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  if (scanSheet) {
+    refreshScannerGttCheckboxes(scanSheet);
+  }
+
+  // 2. GTT Tracker tab
+  const gttSheet = ss.getSheetByName(GTT_CONFIG.SHEET_NAME);
+  if (gttSheet) {
+    refreshGttCheckboxes(gttSheet);
+  }
+
+  // 3. Current Holdings tab
+  const holdingsSheet = ss.getSheetByName(HOLDINGS_CONFIG.SHEET_NAME);
+  if (holdingsSheet) {
+    refreshCurrentHoldingsCheckboxes(holdingsSheet);
+  }
 }
 
 /**

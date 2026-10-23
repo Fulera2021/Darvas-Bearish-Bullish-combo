@@ -181,3 +181,11 @@ When a GTT order triggers and executes in your broker, check the **☑ Column L 
 3. **Rule 3 (Source Cleanup):**
    - The row is deleted from `GTT Tracker`.
    - Remaining rows shift up seamlessly, checkboxes in Col J and Col L are refreshed, and S.No. in Col A is automatically re-sequenced (1, 2, 3...).
+
+### 3. Moving Sold Positions to 'Sold' Tab (Column P in Current Holdings):
+- In the **`Current Holdings`** tab, checkboxes in **Column P (Move to Sold tab)** are automatically populated for any row where **Column I (Sell Date)** is not blank (rows 8 onwards, leaving row 7 formulas untouched).
+- Checking the box in **Column P**:
+  1. **Copies data as values** from **Col A to Col J** (Columns 1–10).
+  2. **Pastes into `Sold` tab:** Pastes into the **first empty row after row 4 (row 5 onwards)** of the `'Sold'` tab in Col A–J with zero formatting applied.
+  3. **Deletes source row:** The entire row is deleted from `'Current Holdings'`, smoothly shifting remaining rows up.
+  4. **Auto-refreshes:** Checkboxes across all tabs (`Scanner`, `GTT Tracker`, `Current Holdings`) auto-populate automatically whenever conditions are satisfied, on any edit, and on opening the sheet. You can also manually trigger `⚡ Darvas Scanner > 🔄 Auto-Populate All Checkboxes (All Tabs)` from the top menu.
