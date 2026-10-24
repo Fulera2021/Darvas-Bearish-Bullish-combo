@@ -292,8 +292,10 @@ function initForm() {
     const numParts = parseInt(document.getElementById('num-parts').value, 10) || 4;
     const startDate = document.getElementById('start-date').value || '2021-01-01';
     const endDate = document.getElementById('end-date').value || getYesterdayDateStr();
-    const targetPct = parseFloat(document.getElementById('target-pct').value) || 5.0;
-    const bullishMinReturn = parseFloat(document.getElementById('bullish-min-return').value) || 15.0;
+    const targetPctVal = parseFloat(document.getElementById('target-pct').value);
+    const targetPct = isNaN(targetPctVal) ? 5.0 : Math.round(targetPctVal * 100) / 100;
+    const bullishMinReturnVal = parseFloat(document.getElementById('bullish-min-return').value);
+    const bullishMinReturn = isNaN(bullishMinReturnVal) ? 15.0 : Math.round(bullishMinReturnVal * 100) / 100;
 
     const payload = {
       mode: state.mode,

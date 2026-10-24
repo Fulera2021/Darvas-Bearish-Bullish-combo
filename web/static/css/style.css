@@ -455,6 +455,12 @@ body {
   gap: 0.5rem;
   border-bottom: 1px solid var(--border-color);
   margin-bottom: 1.25rem;
+  position: sticky;
+  top: 68px;
+  background: rgba(22, 30, 46, 0.98);
+  backdrop-filter: blur(12px);
+  z-index: 30;
+  padding: 0.25rem 0;
 }
 
 .tab-btn {
@@ -483,30 +489,71 @@ body {
   background: var(--accent-cyan);
 }
 
-/* Data Tables */
+/* Data Tables with Sticky Headers */
 .table-responsive {
   width: 100%;
-  overflow-x: auto;
+  max-height: 72vh;
+  overflow: auto;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
+  position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.table-responsive::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+  background: rgba(17, 24, 39, 0.6);
+  border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .data-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.85rem;
   text-align: left;
 }
 
+.data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
 .data-table th {
-  background: rgba(17, 24, 39, 0.95);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #111827; /* Solid background matching dark theme so rows scrolling beneath never show through */
   color: var(--text-muted);
   padding: 0.75rem 1rem;
   font-weight: 600;
   font-size: 0.75rem;
   text-transform: uppercase;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.12);
   white-space: nowrap;
+}
+
+.data-table th:first-child {
+  border-top-left-radius: var(--radius-sm);
+}
+
+.data-table th:last-child {
+  border-top-right-radius: var(--radius-sm);
 }
 
 .col-head-title {
@@ -541,15 +588,26 @@ body {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.data-table tfoot {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+}
+
 .data-table tfoot tr {
-  background: rgba(17, 24, 39, 0.95);
+  background: #111827;
   border-top: 2px solid rgba(255, 255, 255, 0.15);
   font-weight: 600;
 }
 
 .data-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: #111827;
   padding: 0.85rem 1rem;
   color: #fff;
+  border-top: 2px solid rgba(255, 255, 255, 0.15);
   border-bottom: none;
 }
 
