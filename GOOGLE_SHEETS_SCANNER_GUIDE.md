@@ -11,48 +11,49 @@ The script is built specifically for the tab named **`Scanner`** based on your e
 | :---: | :--- | :--- |
 | **A** | `50 NSE Codes` | **Input Column (Row 7 downwards):** User enters stock tickers in `NSE:INFY`, `NSE:YESBANK`, `NSE:BHARTIARTL` format. |
 | **B - D** | `Custom 1 - 3` | **User Custom Columns:** Untouched by the script; can be used for custom notes or user tags. |
-| **E** | `Last Buy Price of Already Bought Stock` | **Dynamic Formula in E6:** `=IFERROR(ARRAYFORMULA(XLOOKUP(G6:G,'Current Holdings'!B:B,'Current Holdings'!C:C,,,-1)))` |
-| **F** | `Distance between CMP and Last Buy Price` | **Dynamic Formula in F6:** `=IFERROR(ARRAYFORMULA(IF(E6:E="",,N6:N/E6:E-1)))` |
-| **G** | `NSE Code` | **Output Column (Row 7 downwards):** Tickers sorted strictly in the 4-tier strategy order. |
-| **H** | `Status` | **Sorted in this exact order:**<br>1. `Bullish Buy Triggered`<br>2. `Bearish Buy Triggered`<br>3. `Tracking for Bearish Buy Signal`<br>4. `Bullish Buy Running`<br>5. `Neutral / Inside 20W Range` |
-| **I** | `Previous Week High` | **High of Last to Last Week ($W_{t-1}$)** |
-| **J** | `Last Week's Close` | **Close of Last Completed Week ($W_t$)** |
-| **K** | `Buy Signal` | `Bullish Buy Triggered`, `Bearish Buy Triggered`, or Blank. |
-| **L** | `Breakout % (Rise)` | **Percentage rise:** `(Col J - Col I) / Col I` = `(Last Week Close - Last to Last Week High) / Last to Last Week High`. Formatted as `0.00%`. Sorted least risen first for triggered stocks. |
-| **M** | `Buy Limit Ceiling (+0.5%)` | **Dynamic Formula in M6:** `=IFERROR(ARRAYFORMULA(IF(K6:K="",,CEILING(J6:J*1.005,0.05))))` *(Calculated from Col J Close)* |
-| **N** | `CMP` | **Dynamic Formula in N6:** `=IFERROR(MAP(G6:G,LAMBDA(ticker, IF(ticker="",, GOOGLEFINANCE(ticker,"price")))))` |
-| **O** | `20W Low Breakdown` | Displays `'20W Low Breakdown'` if 20-week low was touched in recently completed week, else Blank. |
-| **P & Q** | *(Deleted)* | **Deleted by user** — script does not populate anything in Columns P or Q. |
+| **E** | `Last Buy Price of Already Bought Stock` | **Dynamic Formula in E6:** `=IFERROR(ARRAYFORMULA(XLOOKUP(J6:J,'Current Holdings'!B:B,'Current Holdings'!C:C,,,-1)))` |
+| **F** | `Distance between Suggested Buy Price and Last Buy Price` | **Dynamic Formula in F6:** `=IFERROR(ARRAYFORMULA(IF(O6:O="",,O6:O/E6:E-1)))` |
+| **G** | `Already Bought Tranches` | **User / Portfolio Column:** Dynamic formula in G6: `=IFERROR(ARRAYFORMULA(XLOOKUP(J6:J,'Current Holdings'!S:S,'Current Holdings'!X:X)))` |
+| **H** | `Bullish Buy Already Done?` | **Dynamic Formula in H6:** `=IFERROR(ARRAYFORMULA(IF(VLOOKUP(J6:J,FILTER('Current Holdings'!B8:B,'Current Holdings'!E8:E="Bullish Buy"),1,0)<>"","Yes","No")))` |
+| **I** | `GTT Select` | Auto-populated checkbox (`☑`) for buy-eligible stocks (`Bullish Buy Triggered` or `Bearish Buy Triggered`). Checking queues order to `GTT Tracker`. |
+| **J** | `Stock Code` | **Output Column (Row 7 downwards):** Tickers sorted strictly in the 4-tier strategy order. |
+| **K** | `Status` | **Sorted in this exact order:**<br>1. `Bullish Buy Triggered`<br>2. `Bearish Buy Triggered`<br>3. `Tracking for Bearish Buy Signal`<br>4. `Bullish Buy Running`<br>5. `Neutral / Inside 20W Range`<br>*(Rows formatted with status color across Col J to P for Buy Triggered stocks only)* |
+| **L** | `Previous Week High` | **High of Last to Last Week ($W_{t-1}$)** |
+| **M** | `Last Week's Close` | **Close of Last Completed Week ($W_t$)** |
+| **N** | `Breakout % (Rise)` | **Percentage rise:** `(Col M - Col L) / Col L` = `(Last Week Close - Last to Last Week High) / Last to Last Week High`. Formatted as `0.00%`. Sorted least risen first for triggered stocks. |
+| **O** | `Buy Limit Ceiling (+0.5%)` | **Dynamic Formula in O6:** `=IFERROR(ARRAYFORMULA(IF(K6:K="",,IF(ISNUMBER(SEARCH("Buy Triggered", K6:K)), CEILING(M6:M*1.005, 0.05), ""))))` *(Calculated from Col M Close)* |
+| **P** | `CMP` | **Dynamic Formula in P6:** `=IFERROR(MAP(J6:J,LAMBDA(ticker, IF(ticker="",, GOOGLEFINANCE(ticker,"price")))))` |
+| **Q** | `20W Low Breakdown Signal` | Displays `'20W Low Breakdown'` if 20-week low was touched in recently completed week, else Blank. |
 
 ---
 
-### Executive Summary KPI Cards (Rows 1–2, Columns G through O)
+### Executive Summary KPI Cards (Rows 1–2, Columns J through P)
 
-The top rows **Rows 1–2 from Column G onwards** are dynamically formatted into three modern KPI summary cards (Row 3 is kept completely clear as a clean visual spacer):
+The top rows **Rows 1–2 from Column J to P** are dynamically formatted into three modern KPI summary cards (Row 3 is kept completely clear as a clean visual spacer):
 
 ```
-┌───────────────────────────────────────┬───────────────────────────────────────┬───────────────────────────────────────┐
-│        Columns G : I (Card 1)         │        Columns J : L (Card 2)         │        Columns M : O (Card 3)         │
-├───────────────────────────────────────┼───────────────────────────────────────┼───────────────────────────────────────┤
-│         Bullish Buy Triggered         │         Bearish Buy Triggered         │           Last Scan ran on            │
-│                  2                    │                  1                    │           17-Oct-2026 20:20           │
-└───────────────────────────────────────┴───────────────────────────────────────┴───────────────────────────────────────┘
+┌───────────────────────────────────────┬───────────────────────────────┬───────────────────────────────┐
+│        Columns J : L (Card 1)         │     Columns M : N (Card 2)    │     Columns O : P (Card 3)    │
+├───────────────────────────────────────┼───────────────────────────────┼───────────────────────────────┤
+│         Bullish Buy Triggered         │     Bearish Buy Triggered     │       Last Scan ran on        │
+│                  1                    │               6               │       24-Oct-2026 09:51       │
+└───────────────────────────────────────┴───────────────────────────────┴───────────────────────────────┘
 ```
 
-1. **Card 1: Bullish Buy Triggered (Columns G to I, Rows 1–2)**
+1. **Card 1: Bullish Buy Triggered (Columns J to L, Rows 1–2)**
    - **Row 1:** Header title `"Bullish Buy Triggered"` (Soft Emerald background `#D1FAE5`, dark green text `#065F46`, bold 11pt).
    - **Row 2:** Metric count of triggered bullish stocks (Large bold 20pt font `#047857`, soft background `#ECFDF5`).
-   - **Border:** Soft emerald medium border `#A7F3D0` around `G1:I2`.
+   - **Border:** Soft emerald medium border `#A7F3D0` around `J1:L2`.
 
-2. **Card 2: Bearish Buy Triggered (Columns J to L, Rows 1–2)**
+2. **Card 2: Bearish Buy Triggered (Columns M to N, Rows 1–2)**
    - **Row 1:** Header title `"Bearish Buy Triggered"` (Soft Blue background `#DBEAFE`, dark blue text `#1E40AF`, bold 11pt).
    - **Row 2:** Metric count of triggered bearish dip-harvester stocks (Large bold 20pt font `#1D4ED8`, soft background `#EFF6FF`).
-   - **Border:** Soft blue medium border `#BFDBFE` around `J1:L2`.
+   - **Border:** Soft blue medium border `#BFDBFE` around `M1:N2`.
 
-3. **Card 3: Last Scan ran on (Columns M to O, Rows 1–2)**
+3. **Card 3: Last Scan ran on (Columns O to P, Rows 1–2)**
    - **Row 1:** Header title `"Last Scan ran on"` (Soft Slate background `#E2E8F0`, dark slate text `#1E293B`, bold 11pt).
-   - **Row 2:** Execution timestamp strictly formatted in **`dd-mmm-yyyy HH:MM`** (e.g. `17-Oct-2026 20:20`, bold 13pt font `#0F172A`, light slate `#F8FAFC`).
-   - **Border:** Soft slate medium border `#CBD5E1` around `M1:O2`.
+   - **Row 2:** Execution timestamp strictly formatted in **`dd-mmm-yyyy HH:MM`** (e.g. `24-Oct-2026 09:51`, bold 13pt font `#0F172A`, light slate `#F8FAFC`).
+   - **Border:** Soft slate medium border `#CBD5E1` around `O1:P2`.
 
 ---
 
@@ -60,14 +61,14 @@ The top rows **Rows 1–2 from Column G onwards** are dynamically formatted into
 
 ```
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
-│     Column I (High of Last to Last)   │        Column J (Close of Last Week)  │
+│     Column L (High of Last to Last)   │        Column M (Close of Last Week)  │
 │               1,854.70                │                   1,905.00            │
 └───────────────────────────────────────┴───────────────────────────────────────┘
                                        ▲
-   Trigger Check: Is Close of Last Week (Col J) > High of Last to Last Week (Col I) ?
+   Trigger Check: Is Close of Last Week (Col M) > High of Last to Last Week (Col L) ?
    1,905.00 > 1,854.70  ==>  YES (Breakout Triggered!)
-   Col L (Breakout % Rise): (1,905.00 - 1,854.70) / 1,854.70 = +2.71%
-   Col M (Buy Limit Ceiling): CEILING(1,905.00 * 1.005, 0.05) = 1,914.55
+   Col N (Breakout % Rise): (1,905.00 - 1,854.70) / 1,854.70 = +2.71%
+   Col O (Buy Limit Ceiling): CEILING(1,905.00 * 1.005, 0.05) = 1,914.55
 ```
 
 ### 1. Robust Indian Standard Time (IST) & Exchange Holiday Week Detection:
@@ -77,8 +78,8 @@ The top rows **Rows 1–2 from Column G onwards** are dynamically formatted into
     - If executed on **Thursday after 3:30 PM IST** before a Friday holiday, or **anytime on the Friday holiday**, the script automatically recognizes that the exchange closed on Thursday and treats that Thursday as the completed weekly close!
   - **Normal Weeks:**
     - If executed on **Friday after 3:30 PM IST**, or on **Saturday / Sunday**:
-      - **Last Week ($W_t$):** The week that just completed (Close goes to **Col J**).
-      - **Last to Last Week ($W_{t-1}$):** The prior completed week (High goes to **Col I**).
+      - **Last Week ($W_t$):** The week that just completed (Close goes to **Col M**).
+      - **Last to Last Week ($W_{t-1}$):** The prior completed week (High goes to **Col L**).
   - **Mid-Week Safeguard (Monday to Friday before 3:30 PM IST):**
     - The ongoing, incomplete week is automatically ignored to protect against executing on partial fluctuating bars.
     - Evaluates the previously finalized completed week.
@@ -88,19 +89,19 @@ The top rows **Rows 1–2 from Column G onwards** are dynamically formatted into
 * **Bharti Airtel Case Study:**
   - **Week ending 1 Oct 2026:** Bharti Airtel touched its 20-week low $\rightarrow$ `isTracking20w` turned **ON** (`Tracking for Bearish Buy Signal`).
   - **Week ending 9 Oct 2026:**
-    - High of Last to Last Week (Col I) = `1,854.70`
-    - Close of Last Week (Col J) = `1,905.00`
+    - High of Last to Last Week (Col L) = `1,854.70`
+    - Close of Last Week (Col M) = `1,905.00`
     - Since `1,905.00 > 1,854.70`, **`Bearish Buy Triggered`** fired cleanly!
 
-### 3. Strict Priority Sorting in Column H:
-The stocks in Columns G through O are sorted strictly in your exact specified priority:
-1. **`Bullish Buy Triggered`:** Fresh 20-week high breakouts this week, sorted by Column L `Breakout % (Rise)` ascending (least risen first at the top for best risk/reward entry).
-2. **`Bearish Buy Triggered`:** 20W floor touched & weekly swing breakout this week (`Close > Prev Week High`), sorted by Column L `Breakout % (Rise)` ascending.
+### 3. Strict Priority Sorting in Column K:
+The stocks in Columns J through Q are sorted strictly in your exact specified priority:
+1. **`Bullish Buy Triggered`:** Fresh 20-week high breakouts this week, sorted by Column N `Breakout % (Rise)` ascending (least risen first at the top for best risk/reward entry).
+2. **`Bearish Buy Triggered`:** 20W floor touched & weekly swing breakout this week (`Close > Prev Week High`), sorted by Column N `Breakout % (Rise)` ascending.
 3. **`Tracking for Bearish Buy Signal`:** Stocks that touched their 20W floor and are awaiting a weekly swing breakout (e.g. `NSE:YESBANK`).
 4. **`Bullish Buy Running`:** Stocks previously bought on a Bullish signal that have **not touched the 20-week low yet** (e.g. `NSE:ABCAPITAL`). These are active compounders riding the bull run above the 20W floor.
 5. **`Neutral / Inside 20W Range`:** Stocks fluctuating inside range without touching 20W low or high breakout.
 
-*(Note: If a previously running bullish stock touches its 20-week low, it immediately ceases to be 'Bullish Buy Running' and transitions into 'Tracking for Bearish Buy Signal'. If that breakdown happened during the completed week, Col O flags '20W Low Breakdown'.)*
+*(Note: If a previously running bullish stock touches its 20-week low, it immediately ceases to be 'Bullish Buy Running' and transitions into 'Tracking for Bearish Buy Signal'. If that breakdown happened during the completed week, Col Q flags '20W Low Breakdown'.)*
 
 ---
 
@@ -153,13 +154,13 @@ The system provides an automated pipeline linking the **`Scanner`**, **`GTT Trac
 
 ```mermaid
 flowchart LR
-    Scan["Scanner Tab (Col Q: GTT Select)"] -- "☑ Check" --> GTT["GTT Tracker Tab (Rows B4:L)"]
+    Scan["Scanner Tab (Col R: GTT Select)"] -- "☑ Check" --> GTT["GTT Tracker Tab (Rows B4:L)"]
     GTT -- "☑ Col L: Transfer Bought" --> Hold["Current Holdings Tab"]
     GTT -- "☑ Col J: Delete GTT" --> Trash["🗑 Removed from GTT Tracker"]
 ```
 
 ### 1. From Scanner to GTT Tracker:
-- When a buy-eligible stock (`Bullish Buy Triggered` or `Bearish Buy Triggered`) is selected via the checkbox in **Column Q (GTT Select)** on the `Scanner` tab:
+- When a buy-eligible stock (`Bullish Buy Triggered` or `Bearish Buy Triggered`) is selected via the checkbox in **Column R (GTT Select)** on the `Scanner` tab:
   - It moves automatically into **`GTT Tracker`** at the next available row.
   - Col B: Stock Code, Col C: GTT Order Price, Col D: Signal Type.
   - Rows are cleared from `Scanner` results so you don't place duplicate orders.

@@ -5,37 +5,40 @@
  * 
  * Target Sheet Tab: "Scanner"
  * 
- * Layout Mapping (Columns G through O):
- * - Rows 1-2 (Col G to O): Executive Summary KPI Cards:
- *                  - Col G:I -> Bullish Buy Triggered (number of stocks below it in Row 2)
- *                  - Col J:L -> Bearish Buy Triggered (number of stocks below it in Row 2)
- *                  - Col M:O -> Last Scan ran on (dd-mmm-yyyy HH:MM format in Row 2)
+ * Layout Mapping (Columns J through Q):
+ * - Rows 1-2 (Col J to P): Executive Summary KPI Cards:
+ *                  - Col J:L -> Bullish Buy Triggered (number of stocks below it in Row 2)
+ *                  - Col M:N -> Bearish Buy Triggered (number of stocks below it in Row 2)
+ *                  - Col O:P -> Last Scan ran on (dd-mmm-yyyy HH:MM format in Row 2)
  * - Row 5: Column Headers
- * - Row 6: Dynamic Formulas (E6, F6, M6, N6)
- * - Row 7 downwards: Strategy Output (Columns G through O)
- * - Col G: NSE Code (Same format as input in Col A)
- * - Col H: Status (Sorted in this exact order:
+ * - Row 6: Dynamic Formulas (E6, F6, G6, H6, O6, P6)
+ * - Row 7 downwards: Strategy Output (Columns J through Q)
+ * - Col E: Last Buy Price of Already Bought Stock
+ * - Col F: Distance between Suggested Buy Price and Last Buy Price
+ * - Col G: Already Bought Tranches
+ * - Col H: Bullish Buy Already Done? [Formula in H6: =IFERROR(ARRAYFORMULA(IF(VLOOKUP(J6:J,FILTER('Current Holdings'!B8:B,'Current Holdings'!E8:E="Bullish Buy"),1,0)<>"","Yes","No")))]
+ * - Col I: GTT Select checkbox (auto-populated for buy-eligible stocks)
+ * - Col J: Stock Code (Same format as input in Col A)
+ * - Col K: Status (Sorted in this exact order:
  *                  1. Bullish Buy Triggered
  *                  2. Bearish Buy Triggered
  *                  3. Tracking for Bearish Buy Signal
  *                  4. Bullish Buy Running
  *                  5. Neutral / Inside 20W Range)
- * - Col I: Previous Week High (High of LAST TO LAST WEEK, W_{t-1})
- * - Col J: Last Week's Close (Friday Close of LAST COMPLETED WEEK, W_t)
- * - Col K: Buy Signal ("Bullish Buy Triggered", "Bearish Buy Triggered", or Blank)
- * - Col L: Breakout % (Rise) [(Close_J - High_I) / High_I, sorted least risen first]
- * - Col M: Buy Limit Ceiling (+0.5%) [Formula in M6: CEILING(J6:J*1.005, 0.05)]
- * - Col N: CMP [Formula in N6: GOOGLEFINANCE(ticker, "price")]
- * - Col O: 20W Low Breakdown ("20W Low Breakdown" if touched in recently completed week, else Blank)
- * *(Columns P and Q are omitted / deleted)*
+ * - Col L: Previous Week High (High of LAST TO LAST WEEK, W_{t-1})
+ * - Col M: Last Week's Close (Friday Close of LAST COMPLETED WEEK, W_t)
+ * - Col N: Breakout % (Rise) [(Close_M - High_L) / High_L, sorted least risen first]
+ * - Col O: Buy Limit Ceiling (+0.5%) [Formula in O6: CEILING(M6:M*1.005, 0.05)]
+ * - Col P: CMP [Formula in P6: GOOGLEFINANCE(ticker, "price")]
+ * - Col Q: 20W Low Breakdown Signal ("20W Low Breakdown" if touched in recently completed week, else Blank)
  * 
  * Strategy Rules & State Tracking:
- * 1. Bullish Buy Triggered: When Close of last week (Col J) > rolling 20-week high for the first time.
- * 2. Bullish Buy Running: Stocks previously bought on Bullish signal that have NOT touched the 20-week low yet (e.g. NSE:ABCAPITAL).
+ * 1. Bullish Buy Triggered: When Close of last week (Col M) > rolling 20-week high for the first time.
+ * 2. Bullish Buy Running: Stocks previously bought on Bullish signal that have NOT touched the 20-week low yet.
  * 3. Bearish Tracking Activation: When 20-week low is TOUCHED (Weekly Low <= 20W Low),
- *    bullish holding terminates and system starts tracking for Bearish Buy Signal (e.g. NSE:YESBANK).
- * 4. Bearish Buy Triggered: While tracking 20W low, Close of last week (Col J) > High of last to last week (Col I).
- * 5. Col O (20W Low Breakdown): Highlights stocks whose weekly low touched/breached
+ *    bullish holding terminates and system starts tracking for Bearish Buy Signal.
+ * 4. Bearish Buy Triggered: While tracking 20W low, Close of last week (Col M) > High of last to last week (Col L).
+ * 5. Col Q (20W Low Breakdown): Highlights stocks whose weekly low touched/breached
  *    the 20-week low during the recently completed week (fresh breakdown).
  * ============================================================================
  */
@@ -46,12 +49,12 @@ const CONFIG = {
   INPUT_START_ROW: 7,
   INPUT_COL: 1,           // Column A
   OUTPUT_START_ROW: 7,
-  OUTPUT_START_COL: 7,    // Column G
-  OUTPUT_NUM_COLS: 9,     // Columns G to O (9 columns)
+  OUTPUT_START_COL: 10,   // Column J (Stock Code)
+  OUTPUT_NUM_COLS: 8,     // Columns J to Q (8 columns: J, K, L, M, N, O, P, Q)
   FORMULA_ROW: 6,
   LOOKBACK_WEEKS: 20,
-  // Col Q (column 17): GTT Select checkbox — auto-populated for buy-eligible stocks
-  GTT_SELECT_COL: 17,     // Column Q
+  // Col I (column 9): GTT Select checkbox — auto-populated for buy-eligible stocks
+  GTT_SELECT_COL: 9,      // Column I (moved from Column R)
   // NSE Market Friday Holidays (where weekly close shifts to Thursday)
   NSE_FRIDAY_HOLIDAYS: [
     // 2024
@@ -129,7 +132,7 @@ function applyScannerFormattingRulesMenu() {
     let bullishCount = 0;
     let bearishCount = 0;
     if (lastRow >= CONFIG.OUTPUT_START_ROW) {
-      const statuses = sheet.getRange(CONFIG.OUTPUT_START_ROW, 8, lastRow - CONFIG.OUTPUT_START_ROW + 1, 1).getValues();
+      const statuses = sheet.getRange(CONFIG.OUTPUT_START_ROW, 11, lastRow - CONFIG.OUTPUT_START_ROW + 1, 1).getValues();
       statuses.forEach(r => {
         if (r[0] === 'Bullish Buy Triggered') bullishCount++;
         if (r[0] === 'Bearish Buy Triggered') bearishCount++;
@@ -335,7 +338,7 @@ function runDarvasScanner(forceGoogleFinance = false) {
     };
   });
 
-  // 5. Sort processed stocks strictly in Column H priority:
+  // 5. Sort processed stocks strictly in Column I priority:
   //    1. Bullish Buy Triggered (Sort Group 1, sorted least risen first by Breakout %)
   //    2. Bearish Buy Triggered (Sort Group 2, sorted least risen first by Breakout %)
   //    3. Tracking for Bearish Buy Signal (Sort Group 3, alphabetical)
@@ -374,46 +377,47 @@ function runDarvasScanner(forceGoogleFinance = false) {
     }
   }
 
-  // 6. Ensure formulas in Row 6 are set correctly (Col J is Close, so M6 uses J6:J)
+  // 6. Ensure formulas in Row 6 are set correctly (Col K is Close, so N6 uses K6:K)
   ensureRow6Formulas(sheet);
 
-  // 7. Prepare batch values to write to sheet (Columns G to O)
+  // 7. Prepare batch values to write to sheet (Columns J to Q)
   // Columns:
-  // Col G: NSE Code
-  // Col H: Status
-  // Col I: Previous Week High  (High of LAST TO LAST WEEK)
-  // Col J: Last Week's Close   (Friday Close of LAST COMPLETED WEEK)
-  // Col K: Buy Signal
-  // Col L: Breakout % (Rise)   [(Close_J - High_I) / High_I]
-  // Col M: Buy Limit Ceiling (+0.5%) -> Handled by M6 Formula: CEILING(J6:J*1.005, 0.05)
-  // Col N: CMP -> Handled by N6 Formula: GOOGLEFINANCE(ticker, "price")
-  // Col O: 20W Low Breakdown -> Shows '20W Low Breakdown' if 20W low touched in last completed week, else Blank
+  // Col J: Stock Code
+  // Col K: Status
+  // Col L: Previous Week High  (High of LAST TO LAST WEEK, W_{t-1})
+  // Col M: Last Week's Close   (Friday Close of LAST COMPLETED WEEK, W_t)
+  // Col N: Breakout % (Rise)   [(Close_M - High_L) / High_L]
+  // Col O: Buy Limit Ceiling (+0.5%) -> Handled by O6 Formula: CEILING(M6:M*1.005, 0.05)
+  // Col P: CMP -> Handled by P6 Formula: GOOGLEFINANCE(ticker, "price")
+  // Col Q: 20W Low Breakdown Signal -> Shows '20W Low Breakdown' if 20W low touched in last completed week, else Blank
 
   const outputRows = processedData.map(item => {
     return [
-      item.ticker,                                                  // Col G: NSE Code
-      item.status,                                                  // Col H: Status
-      item.prevWeekHigh !== '' ? Number(item.prevWeekHigh) : '',    // Col I: Previous Week High
-      item.lastWeekClose !== '' ? Number(item.lastWeekClose) : '',  // Col J: Last Week's Close
-      item.buySignal,                                               // Col K: Buy Signal
-      item.breakoutPct !== null ? Number(item.breakoutPct) : '',    // Col L: Breakout % (Rise)
-      '',                                                           // Col M: Formula in M6
-      '',                                                           // Col N: Formula in N6
-      item.colO_breakdown                                           // Col O: 20W Low Breakdown
+      item.ticker,                                                  // Col J: Stock Code
+      item.status,                                                  // Col K: Status
+      item.prevWeekHigh !== '' ? Number(item.prevWeekHigh) : '',    // Col L: Previous Week High
+      item.lastWeekClose !== '' ? Number(item.lastWeekClose) : '',  // Col M: Last Week's Close
+      item.breakoutPct !== null ? Number(item.breakoutPct) : '',    // Col N: Breakout % (Rise)
+      '',                                                           // Col O: Handled by formula in O6
+      '',                                                           // Col P: Handled by formula in P6
+      item.colO_breakdown                                           // Col Q: 20W Low Breakdown Signal
     ];
   });
 
-  // 8. Write to Sheet (Columns G through O)
+  // 8. Write to Sheet (Columns J through Q)
   const numOutputRows = outputRows.length;
-  const numOutputCols = CONFIG.OUTPUT_NUM_COLS; // 9 columns (G to O)
+  const numOutputCols = CONFIG.OUTPUT_NUM_COLS; // 8 columns (J to Q)
 
-  // Clear any old data in G7:Q from previous runs (including old GTT checkboxes in Col Q)
+  // Clear any old data in J7:Q from previous runs (including old GTT checkboxes in Col I and old Col R)
   const currentMaxRow = Math.max(sheet.getLastRow(), CONFIG.OUTPUT_START_ROW + numOutputRows + 10);
   if (currentMaxRow >= CONFIG.OUTPUT_START_ROW) {
-    // Clear G:O (output data)
-    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.OUTPUT_START_COL, currentMaxRow - CONFIG.OUTPUT_START_ROW + 1, numOutputCols).clearContent();
-    // Clear Q (old GTT checkboxes)
-    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.GTT_SELECT_COL, currentMaxRow - CONFIG.OUTPUT_START_ROW + 1, 1).clearContent().clearDataValidations();
+    const clearNumRows = currentMaxRow - CONFIG.OUTPUT_START_ROW + 1;
+    // Clear J:Q (output data)
+    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.OUTPUT_START_COL, clearNumRows, numOutputCols).clearContent();
+    // Clear I (GTT checkboxes)
+    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.GTT_SELECT_COL, clearNumRows, 1).clearContent().clearDataValidations().setBackground(null);
+    // Also clear old Col R (old GTT checkboxes if any remained from old layout)
+    sheet.getRange(CONFIG.OUTPUT_START_ROW, 18, clearNumRows, 1).clearContent().clearDataValidations();
   }
 
   // Set new values
@@ -432,10 +436,10 @@ function runDarvasScanner(forceGoogleFinance = false) {
   const runningCount = processedData.filter(d => d.sortGroup === 4).length;
   const breakdownCount = processedData.filter(d => d.colO_breakdown !== '').length;
 
-  // 11. Populate executive summary KPI cards (Rows 1-2 from Col G onwards)
+  // 11. Populate executive summary KPI cards (Rows 1-2 from Col H onwards)
   updateScannerSummaryHeader(sheet, bullishCount, bearishCount);
 
-  // 12. Populate GTT Select checkboxes in Col Q for buy-eligible stocks
+  // 12. Populate GTT Select checkboxes in Col R for buy-eligible stocks
   populateGttCheckboxes(sheet, CONFIG.OUTPUT_START_ROW, numOutputRows, processedData);
 
   ss.toast(`Scan complete in ${durationSec}s! Found ${bullishCount} Bullish, ${bearishCount} Bearish buys, ${trackingCount} Tracking, and ${runningCount} Bullish Running.`, '⚡ Scan Finished', 8);
@@ -449,11 +453,11 @@ function runDarvasScanner(forceGoogleFinance = false) {
  * onEdit simple trigger — fires automatically when any cell in the spreadsheet
  * is edited by the user.
  *
- * When a checkbox in Col Q (GTT Select) on the Scanner tab is checked:
- *  1. Reads the stock code (Col G) and GTT price (Col M) from that row.
+ * When a checkbox in Col R (GTT Select) on the Scanner tab is checked:
+ *  1. Reads the stock code (Col H) and GTT price (Col N) from that row.
  *  2. Appends them to the GTT Tracker tab (starting at B4 / C4 / D4).
- *  3. Clears that row's data from the Scanner tab (Cols G:Q) so it disappears
- *     from scan results. Col A (input ticker) is never touched.
+ *  3. Clears that row's data from the Scanner tab (Cols H:P and Col R) so it disappears
+ *     from scan results. Col A-G is never touched.
  *
  * @param {GoogleAppsScript.Events.SheetsOnEdit} e The onEdit event object.
  */
@@ -467,17 +471,17 @@ function onEdit(e) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     // -----------------------------------------------------------------------
-    // BRANCH A: Scanner tab — Col Q (GTT Select) checkbox checked
+    // BRANCH A: Scanner tab — Col I (GTT Select) checkbox checked
     // -----------------------------------------------------------------------
     if (sheetName === CONFIG.SHEET_NAME &&
       editedCol === CONFIG.GTT_SELECT_COL &&
       editedRow >= CONFIG.OUTPUT_START_ROW &&
       e.value === 'TRUE') {
 
-      // Read stock code (Col G = col 7) and GTT price (Col M = col 13)
-      const ticker = sheet.getRange(editedRow, 7).getValue();
-      const gttPrice = sheet.getRange(editedRow, 13).getValue();
-      const rawSignal = sheet.getRange(editedRow, 11).getValue(); // Col K: Buy Signal
+      // Read stock code (Col J = col 10), GTT price (Col O = col 15), and Status (Col K = col 11)
+      const ticker = sheet.getRange(editedRow, 10).getValue();
+      const gttPrice = sheet.getRange(editedRow, 15).getValue();
+      const rawSignal = sheet.getRange(editedRow, 11).getValue(); // Col K: Status
 
       if (!ticker || ticker === '') return; // Safety: skip empty row
 
@@ -512,9 +516,9 @@ function onEdit(e) {
       // Add checkboxes (Col J & Col L) for this new row
       refreshGttCheckboxes(gttSheet);
 
-      // Clear the stock's row from Scanner (G:Q only, leave Col A untouched)
-      sheet.getRange(editedRow, 7, 1, 9).clearContent();
-      sheet.getRange(editedRow, CONFIG.GTT_SELECT_COL).clearContent().clearDataValidations();
+      // Clear the stock's row from Scanner (Cols J:Q and Col I only, leave Col A-H untouched)
+      sheet.getRange(editedRow, CONFIG.OUTPUT_START_COL, 1, CONFIG.OUTPUT_NUM_COLS).clearContent();
+      sheet.getRange(editedRow, CONFIG.GTT_SELECT_COL).clearContent().clearDataValidations().setBackground(null);
 
       ss.toast(`✅ ${ticker} → GTT Tracker (row ${nextRow}), GTT price ₹${gttPrice}.`, 'GTT Order Queued', 5);
       return;
@@ -719,7 +723,7 @@ function onEdit(e) {
 }
 
 /**
- * Populates GTT Select checkboxes in Column Q for rows where status is
+ * Populates GTT Select checkboxes in Column I for rows where status is
  * 'Bullish Buy Triggered' or 'Bearish Buy Triggered'. Other rows get no checkbox.
  *
  * @param {SpreadsheetApp.Sheet} sheet The Scanner sheet.
@@ -730,7 +734,7 @@ function onEdit(e) {
 function populateGttCheckboxes(sheet, startRow, numRows, processedData) {
   if (numRows <= 0) return;
 
-  // Add header label in Q5 if it's blank
+  // Add header label in I5 if it's blank
   const headerCell = sheet.getRange(5, CONFIG.GTT_SELECT_COL);
   if (headerCell.getValue() === '') {
     headerCell
@@ -823,7 +827,7 @@ function setupGttTrackerSheet() {
     try {
       SpreadsheetApp.getUi().alert(
         '✅ GTT Tracker tab created!\n\n' +
-        'Stocks appear here when you check the ☑ GTT Select checkbox (Col Q) in the Scanner tab.\n\n' +
+        'Stocks appear here when you check the ☑ GTT Select checkbox (Col I) in the Scanner tab.\n\n' +
         '• Col B: NSE Code\n• Col C: GTT Price\n• Col D: Signal Type\n' +
         '• Col E: Qty (budget ÷ GTT price)\n• Col F: Total cost\n' +
         '• Col G: In Holdings?\n• Col H: CMP\n• Col I: GTT vs CMP %\n' +
@@ -1003,8 +1007,8 @@ function getFirstEmptyRowInSoldTab(soldSheet) {
 }
 
 /**
- * Refreshes GTT Select checkboxes in Column Q of the Scanner tab for all rows
- * where Column K is 'Bullish Buy Triggered' or 'Bearish Buy Triggered'.
+ * Refreshes GTT Select checkboxes in Column I of the Scanner tab for all rows
+ * where Column K (Status) is 'Bullish Buy Triggered' or 'Bearish Buy Triggered'.
  *
  * @param {SpreadsheetApp.Sheet} [scannerSheet]
  */
@@ -1017,35 +1021,39 @@ function refreshScannerGttCheckboxes(scannerSheet) {
   if (lastRow < CONFIG.OUTPUT_START_ROW) return;
 
   const numRows = lastRow - CONFIG.OUTPUT_START_ROW + 1;
-  const statusValues = sheet.getRange(CONFIG.OUTPUT_START_ROW, 11, numRows, 1).getValues(); // Col K: Buy Signal
-  const colQRange = sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.GTT_SELECT_COL, numRows, 1);
-  const colQValues = colQRange.getValues();
+  const statusValues = sheet.getRange(CONFIG.OUTPUT_START_ROW, 11, numRows, 1).getValues(); // Col K: Status
+  const colIRange = sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.GTT_SELECT_COL, numRows, 1);
+  const colIValues = colIRange.getValues();
 
   const checkboxValidation = SpreadsheetApp.newDataValidation().requireCheckbox().build();
   const validations = [];
-  const newQValues = [];
+  const newIValues = [];
+  const backgrounds = [];
 
   for (let i = 0; i < numRows; i++) {
     const status = String(statusValues[i][0] || '').trim();
     const isBuyEligible = (status === 'Bullish Buy Triggered' || status === 'Bearish Buy Triggered');
-    const currentVal = colQValues[i][0];
+    const currentVal = colIValues[i][0];
 
     if (isBuyEligible) {
       validations.push([checkboxValidation]);
-      newQValues.push([currentVal === true || currentVal === 'TRUE' ? true : false]);
+      newIValues.push([currentVal === true || currentVal === 'TRUE' ? true : false]);
+      backgrounds.push(['#FEFCE8']);
     } else {
       validations.push([null]);
-      newQValues.push(['']);
+      newIValues.push(['']);
+      backgrounds.push([null]);
     }
   }
 
-  colQRange.setDataValidations(validations);
-  colQRange.setValues(newQValues);
+  colIRange.setDataValidations(validations);
+  colIRange.setValues(newIValues);
+  colIRange.setBackgrounds(backgrounds);
 }
 
 /**
  * Refreshes and auto-populates checkboxes across all sheets in the workbook:
- * 1. Scanner tab (Col Q: wherever Col K is 'Bullish Buy Triggered' or 'Bearish Buy Triggered')
+ * 1. Scanner tab (Col I: wherever Col K is 'Bullish Buy Triggered' or 'Bearish Buy Triggered')
  * 2. GTT Tracker tab (Col J & Col L: wherever Col B is not blank)
  * 3. Current Holdings tab (Col P: wherever Col I is not blank)
  */
@@ -1381,8 +1389,8 @@ function analyzeStockFromBars(ticker, bars) {
   const currentCompletedIdx = indices.lastCompletedIdx; // W_t: Last Completed Week
   const prevWeekIdx = indices.lastToLastIdx;             // W_{t-1}: Last to Last Week
 
-  const lastWeekBar = bars[currentCompletedIdx];         // Last Week (Col J)
-  const lastToLastWeekBar = bars[prevWeekIdx];           // Last to Last Week (Col I)
+  const lastWeekBar = bars[currentCompletedIdx];         // Last Week (Col K)
+  const lastToLastWeekBar = bars[prevWeekIdx];           // Last to Last Week (Col J)
 
   const lastWeekClose = lastWeekBar.close;               // Close of Last Week
   const lastToLastWeekHigh = lastToLastWeekBar.high;     // High of Last to Last Week
@@ -1436,7 +1444,7 @@ function analyzeStockFromBars(ticker, bars) {
     isTracking20w = true;
   }
 
-  // Populate Column O: '20W Low Breakdown' if 20-week low was touched in recently completed week
+  // Populate Column P: '20W Low Breakdown' if 20-week low was touched in recently completed week
   const colO_breakdown = touched20wLowThisWeek ? '20W Low Breakdown' : '';
 
   let status = 'Neutral / Inside 20W Range';
@@ -1478,11 +1486,11 @@ function analyzeStockFromBars(ticker, bars) {
   return {
     ticker: ticker,
     status: status,
-    prevWeekHigh: lastToLastWeekHigh.toFixed(2),  // Col I: High of Last to Last Week
-    lastWeekClose: lastWeekClose.toFixed(2),      // Col J: Close of Last Week
-    buySignal: buySignal,                        // Col K: Buy Signal
-    breakoutPct: breakoutPct,                    // Col L: Breakout % (Rise)
-    colO_breakdown: colO_breakdown,              // Col O: 20W Low Breakdown
+    prevWeekHigh: lastToLastWeekHigh.toFixed(2),  // Col J: High of Last to Last Week
+    lastWeekClose: lastWeekClose.toFixed(2),      // Col K: Close of Last Week
+    buySignal: buySignal,                        // Col L: Buy Signal
+    breakoutPct: breakoutPct,                    // Col M: Breakout % (Rise)
+    colO_breakdown: colO_breakdown,              // Col P: 20W Low Breakdown Signal
     sortGroup: sortGroup
   };
 }
@@ -1507,15 +1515,40 @@ function runDarvasScannerBackupOnly() {
 }
 
 /**
- * Ensures required formulas are placed in Row 6 (E6, F6, M6, N6).
- * Notice: Since Col J is Close of Last Week, M6 formula uses J6:J.
+ * Ensures required formulas are placed in Row 6 (E6, F6, G6, H6, O6, P6).
+ * - H6 is populated with the user formula looking up Stock Code in J6:J against Current Holdings Bullish Buys.
+ * - O6 computes Buy Limit Ceiling from Last Week's Close in M6:M.
+ * - P6 computes CMP from Stock Code in J6:J via GOOGLEFINANCE.
  */
 function ensureRow6Formulas(sheet) {
+  // Clear any leftover array formulas from previous layouts in row 6 to avoid formula collision/spill errors
+  const cellsToClear = ['I6', 'M6', 'N6', 'Q6'];
+  cellsToClear.forEach(cell => {
+    const r = sheet.getRange(cell);
+    if (r.getFormula()) {
+      r.clearContent();
+    }
+  });
+
+  // If H7:H contains static values from previous runs (when stock code was in Col H),
+  // clear it so the array formula in H6 can expand cleanly downward without #REF! spill errors.
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= CONFIG.OUTPUT_START_ROW) {
+    const hRange = sheet.getRange(CONFIG.OUTPUT_START_ROW, 8, lastRow - CONFIG.OUTPUT_START_ROW + 1, 1);
+    const hFormulas = hRange.getFormulas();
+    const hasFormulas = hFormulas.some(row => row[0] !== '');
+    if (!hasFormulas) {
+      hRange.clearContent();
+    }
+  }
+
   const formulas = {
-    'E6': "=IFERROR(ARRAYFORMULA(XLOOKUP(G6:G,'Current Holdings'!B:B,'Current Holdings'!C:C,,,-1)))",
-    'F6': "=IFERROR(ARRAYFORMULA(IF(E6:E=\"\",,M6:M/E6:E-1)))",
-    'M6': "=IFERROR(ARRAYFORMULA(IF(K6:K=\"\",,CEILING(J6:J*1.005,0.05))))",
-    'N6': "=IFERROR(MAP(G6:G,LAMBDA(ticker, IF(ticker=\"\",, GOOGLEFINANCE(ticker,\"price\")))))"
+    'E6': "=IFERROR(ARRAYFORMULA(XLOOKUP(J6:J,'Current Holdings'!B:B,'Current Holdings'!C:C,,,-1)))",
+    'F6': "=IFERROR(ARRAYFORMULA(IF(O6:O=\"\",,O6:O/E6:E-1)))",
+    'G6': "=IFERROR(ARRAYFORMULA(XLOOKUP(J6:J,'Current Holdings'!S:S,'Current Holdings'!X:X)))",
+    'H6': "=IFERROR(ARRAYFORMULA(IF(VLOOKUP(J6:J,FILTER('Current Holdings'!B8:B,'Current Holdings'!E8:E=\"Bullish Buy\"),1,0)<>\"\",\"Yes\",\"No\")))",
+    'O6': "=IFERROR(ARRAYFORMULA(IF(K6:K=\"\",,CEILING(M6:M*1.005,0.05))))",
+    'P6': "=IFERROR(MAP(J6:J,LAMBDA(ticker, IF(ticker=\"\",, GOOGLEFINANCE(ticker,\"price\")))))"
   };
 
   for (const cell in formulas) {
@@ -1524,7 +1557,7 @@ function ensureRow6Formulas(sheet) {
 }
 
 /**
- * Formats columns G:O with clean numbers, percentages, and currencies.
+ * Formats columns E:Q with clean numbers, percentages, currencies, and alignments.
  */
 function formatScannerDataRange(sheet, startRow, numRows) {
   if (numRows <= 0) return;
@@ -1536,25 +1569,34 @@ function formatScannerDataRange(sheet, startRow, numRows) {
   sheet.getRange(startRow, 5, numRows, 1).setNumberFormat(FMT_PRICE);   // Col E: Last Buy Price
   sheet.getRange(startRow, 6, numRows, 1).setNumberFormat(FMT_PERCENT); // Col F: Distance %
 
-  // Format Col I, J: Prices (Col I: Prev Week High, Col J: Last Week Close)
-  sheet.getRange(startRow, 9, numRows, 2).setNumberFormat(FMT_PRICE);   // Col I, J: High, Close
+  // Format Col H: Bullish Buy Already Done? (Center alignment)
+  sheet.getRange(startRow, 8, numRows, 1).setHorizontalAlignment('center');
 
-  // Format Col L: Breakout %
-  sheet.getRange(startRow, 12, numRows, 1).setNumberFormat(FMT_PERCENT); // Col L: Breakout %
+  // Format Col J: Stock Code (Left alignment)
+  sheet.getRange(startRow, 10, numRows, 1).setHorizontalAlignment('left');
 
-  // Format Col M, N: Prices
-  sheet.getRange(startRow, 13, numRows, 2).setNumberFormat(FMT_PRICE);  // Col M, N: Ceiling, CMP
+  // Format Col K: Status (Bold font)
+  sheet.getRange(startRow, 11, numRows, 1).setFontWeight('bold');
 
-  // Format Col O: Center alignment
-  sheet.getRange(startRow, 15, numRows, 1).setHorizontalAlignment('center'); // Col O
+  // Format Col L, M: Prices (Col L: Prev Week High, Col M: Last Week Close)
+  sheet.getRange(startRow, 12, numRows, 2).setNumberFormat(FMT_PRICE);  // Col L, M: High, Close
+
+  // Format Col N: Breakout %
+  sheet.getRange(startRow, 14, numRows, 1).setNumberFormat(FMT_PERCENT); // Col N: Breakout %
+
+  // Format Col O, P: Prices
+  sheet.getRange(startRow, 15, numRows, 2).setNumberFormat(FMT_PRICE);  // Col O, P: Ceiling, CMP
+
+  // Format Col Q: Center alignment
+  sheet.getRange(startRow, 17, numRows, 1).setHorizontalAlignment('center'); // Col Q: 20W Low Breakdown Signal
 }
 
 /**
- * Populates top executive summary KPI cards in Rows 1-2 across Columns G:O.
+ * Populates top executive summary KPI cards in Rows 1-2 across Columns J:P.
  * Displays:
- * 1. Col G:I (Row 1-2) -> Bullish Buy Triggered (number of stocks below it in Row 2)
- * 2. Col J:L (Row 1-2) -> Bearish Buy Triggered (number of stocks below it in Row 2)
- * 3. Col M:O (Row 1-2) -> Last Scan ran on (dd-mmm-yyyy HH:MM format in Row 2)
+ * 1. Col J:L (Row 1-2) -> Bullish Buy Triggered (number of stocks below it in Row 2)
+ * 2. Col M:N (Row 1-2) -> Bearish Buy Triggered (number of stocks below it in Row 2)
+ * 3. Col O:P (Row 1-2) -> Last Scan ran on (dd-mmm-yyyy HH:MM format in Row 2)
  * 
  * Row 3 content is cleared and formatted cleanly as breathing space.
  * 
@@ -1571,14 +1613,14 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
   sheet.setRowHeight(2, 34);
   sheet.setRowHeight(3, 16);
 
-  // Safely clear old contents, formats & reset merges across G1:O3
-  const oldHeaderRange = sheet.getRange('G1:O3');
+  // Safely clear old contents, formats & reset merges across G1:Q3
+  const oldHeaderRange = sheet.getRange('G1:Q3');
   oldHeaderRange.breakApart();
   oldHeaderRange.clearContent();
   oldHeaderRange.clearFormat();
 
-  // --- CARD 1: Bullish Buy Triggered (Cols G:I, Rows 1-2) ---
-  sheet.getRange('G1:I1').merge()
+  // --- CARD 1: Bullish Buy Triggered (Cols J:L, Rows 1-2) ---
+  sheet.getRange('J1:L1').merge()
     .setValue('Bullish Buy Triggered')
     .setBackground('#D1FAE5')
     .setFontColor('#065F46')
@@ -1587,7 +1629,7 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  sheet.getRange('G2:I2').merge()
+  sheet.getRange('J2:L2').merge()
     .setValue(bullishCount)
     .setBackground('#ECFDF5')
     .setFontColor('#047857')
@@ -1596,10 +1638,10 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  sheet.getRange('G1:I2').setBorder(true, true, true, true, false, false, '#A7F3D0', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  sheet.getRange('J1:L2').setBorder(true, true, true, true, false, false, '#A7F3D0', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
-  // --- CARD 2: Bearish Buy Triggered (Cols J:L, Rows 1-2) ---
-  sheet.getRange('J1:L1').merge()
+  // --- CARD 2: Bearish Buy Triggered (Cols M:N, Rows 1-2) ---
+  sheet.getRange('M1:N1').merge()
     .setValue('Bearish Buy Triggered')
     .setBackground('#DBEAFE')
     .setFontColor('#1E40AF')
@@ -1608,7 +1650,7 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  sheet.getRange('J2:L2').merge()
+  sheet.getRange('M2:N2').merge()
     .setValue(bearishCount)
     .setBackground('#EFF6FF')
     .setFontColor('#1D4ED8')
@@ -1617,10 +1659,10 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  sheet.getRange('J1:L2').setBorder(true, true, true, true, false, false, '#BFDBFE', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  sheet.getRange('M1:N2').setBorder(true, true, true, true, false, false, '#BFDBFE', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
-  // --- CARD 3: Last Scan ran on (Cols M:O, Rows 1-2) ---
-  sheet.getRange('M1:O1').merge()
+  // --- CARD 3: Last Scan ran on (Cols O:P, Rows 1-2) ---
+  sheet.getRange('O1:P1').merge()
     .setValue('Last Scan ran on')
     .setBackground('#E2E8F0')
     .setFontColor('#1E293B')
@@ -1629,7 +1671,7 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  sheet.getRange('M2:O2').merge()
+  sheet.getRange('O2:P2').merge()
     .setValue(timestampStr)
     .setBackground('#F8FAFC')
     .setFontColor('#0F172A')
@@ -1638,80 +1680,67 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  sheet.getRange('M1:O2').setBorder(true, true, true, true, false, false, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  sheet.getRange('O1:P2').setBorder(true, true, true, true, false, false, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 }
 
 /**
- * Applies visual conditional formatting rules to highlight signals, statuses, and breakdowns.
+ * Applies visual conditional formatting rules:
+ * - Highlights entire row range (Col J to P) ONLY for 'Buy Triggered' stocks (Bullish and Bearish)
+ * - Highlights Column K only for 'Bullish Buy Running' and 'Tracking for Bearish Buy Signal'
+ * - Col Q (20W Low Breakdown Signal) -> Soft Red Alert Badge
+ * - Col F (Distance %) -> Soft Green (Positive) / Soft Red (Negative)
  */
 function applyScannerFormattingRules(sheet) {
   const rules = [];
 
-  // 1. Buy Signal Column (Col K) Highlights
-  // Bullish Buy Triggered -> Soft Emerald Green
+  // 1. Buy Triggered Stocks Highlighting across Columns J through P (Columns 10 through 16)
+  // Formula: =$K7="..." locks evaluation to Column K Status for the entire row range J:P
+
+  // 1a. Bullish Buy Triggered -> Soft Emerald Green across Col J-P
   rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('Bullish Buy Triggered')
+    .whenFormulaSatisfied('=$K7="Bullish Buy Triggered"')
     .setBackground('#D1FAE5') // Light Emerald
     .setFontColor('#065F46')  // Dark Emerald
-    .setBold(true)
-    .setRanges([sheet.getRange('K7:K500')])
+    .setRanges([sheet.getRange('J7:P500')])
     .build());
 
-  // Bearish Buy Triggered -> Soft Cyan / Blue
+  // 1b. Bearish Buy Triggered -> Soft Cyan / Blue across Col J-P
   rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('Bearish Buy Triggered')
+    .whenFormulaSatisfied('=$K7="Bearish Buy Triggered"')
     .setBackground('#DBEAFE') // Light Blue
     .setFontColor('#1E40AF')  // Dark Blue
-    .setBold(true)
-    .setRanges([sheet.getRange('K7:K500')])
+    .setRanges([sheet.getRange('J7:P500')])
     .build());
 
-  // 2. Status Column (Col H) Highlights (In Priority Order)
-  // 1. Bullish Buy Triggered -> Soft Emerald
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('Bullish Buy Triggered')
-    .setBackground('#D1FAE5')
-    .setFontColor('#065F46')
-    .setBold(true)
-    .setRanges([sheet.getRange('H7:H500')])
-    .build());
+  // 2. Non-triggered Statuses -> Highlight Column K ONLY (Columns J-P remain normal/white)
 
-  // 2. Bearish Buy Triggered -> Soft Blue
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('Bearish Buy Triggered')
-    .setBackground('#DBEAFE')
-    .setFontColor('#1E40AF')
-    .setBold(true)
-    .setRanges([sheet.getRange('H7:H500')])
-    .build());
-
-  // 3. Bullish Buy Running -> Soft Mint / Teal
+  // 2a. Bullish Buy Running -> Soft Mint / Teal on Column K only
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenTextEqualTo('Bullish Buy Running')
     .setBackground('#CCFBF1') // Light Teal
     .setFontColor('#0F766E')  // Dark Teal
     .setBold(true)
-    .setRanges([sheet.getRange('H7:H500')])
+    .setRanges([sheet.getRange('K7:K500')])
     .build());
 
-  // 4. Tracking for Bearish Buy Signal -> Soft Amber / Orange
+  // 2b. Tracking for Bearish Buy Signal -> Soft Amber / Orange on Column K only
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenTextEqualTo('Tracking for Bearish Buy Signal')
     .setBackground('#FEF3C7') // Light Amber
     .setFontColor('#92400E')  // Dark Amber
-    .setRanges([sheet.getRange('H7:H500')])
+    .setRanges([sheet.getRange('K7:K500')])
     .build());
 
-  // 5. Col O (20W Low Breakdown) -> Soft Red Alert Badge
+  // 2. Col Q (20W Low Breakdown Signal) -> Soft Red Alert Badge
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenTextEqualTo('20W Low Breakdown')
     .setBackground('#FEE2E2') // Light Red
     .setFontColor('#991B1B')  // Dark Red
     .setBold(true)
-    .setRanges([sheet.getRange('O7:O500')])
+    .setRanges([sheet.getRange('Q7:Q500')])
     .build());
 
-  // 4. Distance between CMP and Last Buy Price (Col F)
+  // 3. Distance between CMP and Last Buy Price (Col F)
   // Positive -> Soft Green
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenNumberGreaterThan(0)
@@ -1726,14 +1755,6 @@ function applyScannerFormattingRules(sheet) {
     .setBackground('#FFF1F2')
     .setFontColor('#BE123C')
     .setRanges([sheet.getRange('F7:F500')])
-    .build());
-
-  // 5. Breakout % (Rise) (Col L) Color Gradient (Low = Green, High = Yellow/Orange)
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .setGradientMinpointWithValue('#D1FAE5', SpreadsheetApp.InterpolationType.MIN, '')
-    .setGradientMidpointWithValue('#FEF9C3', SpreadsheetApp.InterpolationType.PERCENTILE, '50')
-    .setGradientMaxpointWithValue('#FED7AA', SpreadsheetApp.InterpolationType.MAX, '')
-    .setRanges([sheet.getRange('L7:L500')])
     .build());
 
   // Set the conditional format rules
@@ -1784,12 +1805,12 @@ function showAboutDialog() {
         </tr>
         <tr>
           <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: #047857;">1. Bullish Buy Triggered</td>
-          <td style="padding: 6px; border: 1px solid #cbd5e1;">Close of Last Week (Col J) > 20-Week High (Fresh Breakout)</td>
+          <td style="padding: 6px; border: 1px solid #cbd5e1;">Close of Last Week (Col M) > 20-Week High (Fresh Breakout)</td>
           <td style="padding: 6px; border: 1px solid #cbd5e1;">Deploy Slot 1 Macro Trend Compounder</td>
         </tr>
         <tr>
           <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: #1e40af;">2. Bearish Buy Triggered</td>
-          <td style="padding: 6px; border: 1px solid #cbd5e1;">20W Low Touched & Close of Last Week (Col J) > High of Last to Last Week (Col I)</td>
+          <td style="padding: 6px; border: 1px solid #cbd5e1;">20W Low Touched & Close of Last Week (Col M) > High of Last to Last Week (Col L)</td>
           <td style="padding: 6px; border: 1px solid #cbd5e1;">Deploy Dip-Harvester Tranche (Target +5%)</td>
         </tr>
         <tr>
@@ -1803,20 +1824,25 @@ function showAboutDialog() {
           <td style="padding: 6px; border: 1px solid #cbd5e1;">Holding & Compounding Macro Trend</td>
         </tr>
         <tr>
-          <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: #b91c1c;">Col O: 20W Low Breakdown</td>
+          <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: #b91c1c;">Col Q: 20W Low Breakdown Signal</td>
           <td style="padding: 6px; border: 1px solid #cbd5e1;">Low of recently completed week <= 20W Low</td>
           <td style="padding: 6px; border: 1px solid #cbd5e1;">Alert: Fresh 20W low touched this week!</td>
         </tr>
       </table>
 
       <p><b>Columns:</b><br>
-      • <b>Col I:</b> High of Last to Last Week<br>
-      • <b>Col J:</b> Close of Last Week<br>
-      • <b>Col L:</b> Breakout % = (Col J - Col I) / Col I<br>
-      • <b>Col M:</b> Buy Limit Ceiling = CEILING(Col J * 1.005, 0.05)<br>
-      • <b>Col O:</b> 20W Low Breakdown (Alert for fresh breakdown this week)</p>
+      • <b>Col H:</b> Bullish Buy Already Done?<br>
+      • <b>Col I:</b> GTT Select Checkbox<br>
+      • <b>Col J:</b> Stock Code<br>
+      • <b>Col K:</b> Status<br>
+      • <b>Col L:</b> High of Last to Last Week<br>
+      • <b>Col M:</b> Close of Last Week<br>
+      • <b>Col N:</b> Breakout % = (Col M - Col L) / Col L<br>
+      • <b>Col O:</b> Buy Limit Ceiling = CEILING(Col M * 1.005, 0.05)<br>
+      • <b>Col P:</b> Current Market Price (CMP)<br>
+      • <b>Col Q:</b> 20W Low Breakdown Signal (Alert for fresh breakdown this week)</p>
 
-      <p><b>Sorting Order in Column H:</b><br>
+      <p><b>Sorting Order in Column K:</b><br>
       1. Bullish Buy Triggered (sorted by least Breakout % rise first)<br>
       2. Bearish Buy Triggered (sorted by least Breakout % rise first)<br>
       3. Tracking for Bearish Buy Signal<br>
