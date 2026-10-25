@@ -176,6 +176,8 @@ async def execute_backtest(req: BacktestRequest):
             monthly_summary_json = [
                 {
                     "year_mmm": m.year_mmm,
+                    "num_buys": getattr(m, "num_buys", 0),
+                    "num_sells": getattr(m, "num_sells", 0),
                     "trade_realized_profit": round(m.trade_realized_profit, 2),
                     "magic_profit": round(m.magic_profit, 2),
                     "dividend_income": round(m.dividend_income, 2),
@@ -295,6 +297,8 @@ async def execute_backtest(req: BacktestRequest):
             monthly_summary_json = [
                 {
                     "year_mmm": m.year_mmm,
+                    "num_buys": getattr(m, "num_buys", 0),
+                    "num_sells": getattr(m, "num_sells", 0),
                     "trade_realized_profit": round(m.trade_realized_profit, 2),
                     "magic_profit": round(m.magic_profit, 2),
                     "dividend_income": round(m.dividend_income, 2),

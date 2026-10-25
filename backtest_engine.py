@@ -84,6 +84,8 @@ class MonthlySummary:
     max_drawdown_pct: float          # Peak drawdown % during the month
     month_end_drawdown_pct: float = 0.0 # Drawdown % at month end
     idle_unused_cash: float = 0.0    # Idle unused cash at month end
+    num_buys: int = 0                # Number of buys executed in the month
+    num_sells: int = 0               # Number of sells executed in the month
 
 @dataclass
 class BacktestResult:
@@ -110,6 +112,8 @@ class BacktestResult:
     dividend_income: float = 0.0
     ending_overall_capital: float = 0.0
     ending_tranche_amount: float = 0.0
+    start_date: str = ""
+    end_date: str = ""
     dividend_events: List[DividendEvent] = field(default_factory=list)
     magic_events: List[MagicProfitEvent] = field(default_factory=list)
     trades: List[Tranche] = field(default_factory=list)
@@ -166,7 +170,8 @@ def calculate_xirr(cash_flows: List[tuple], guess: float = 0.1, tol: float = 1e-
 
 def generate_monthly_summaries(
     daily_snapshots: List[dict],
-    total_capital: float
+    total_capital: float,
+    trades: Optional[List[Tranche]] = None
 ) -> List[MonthlySummary]:
     """Aggregates daily performance snapshots into calendar monthly summary records."""
     if not daily_snapshots:
@@ -179,6 +184,17 @@ def generate_monthly_summaries(
         if ym not in months_map:
             months_map[ym] = []
         months_map[ym].append(s)
+
+    buys_map = {}
+    sells_map = {}
+    if trades:
+        for t in trades:
+            if t.buy_date:
+                b_key = (t.buy_date.year, t.buy_date.month)
+                buys_map[b_key] = buys_map.get(b_key, 0) + 1
+            if t.sell_date and t.status == "CLOSED":
+                s_key = (t.sell_date.year, t.sell_date.month)
+                sells_map[s_key] = sells_map.get(s_key, 0) + 1
         
     monthly_list = []
     prev_unrealized = 0.0
@@ -203,6 +219,9 @@ def generate_monthly_summaries(
         else:
             m_end_idle_cash = max(0.0, total_capital - snaps[-1].get("open_invested", max_blocked))
         
+        n_buys = buys_map.get((yr, mo), 0)
+        n_sells = sells_map.get((yr, mo), 0)
+
         monthly_list.append(MonthlySummary(
             year_mmm=year_mmm,
             trade_realized_profit=round(t_realized, 2),
@@ -216,7 +235,9 @@ def generate_monthly_summaries(
             monthly_return_pct=ret_pct,
             max_drawdown_pct=max_dd,
             month_end_drawdown_pct=end_dd,
-            idle_unused_cash=round(m_end_idle_cash, 2)
+            idle_unused_cash=round(m_end_idle_cash, 2),
+            num_buys=n_buys,
+            num_sells=n_sells
         ))
         prev_unrealized = m_end_unrealized
         
@@ -835,8 +856,10 @@ def run_backtest(
         dividend_income=total_div_income,
         ending_overall_capital=ending_overall_capital,
         ending_tranche_amount=ending_tranche_amount,
+        start_date=config.start_date,
+        end_date=config.end_date,
         dividend_events=dividend_events,
         magic_events=magic_events,
         trades=all_trades,
-        monthly_summaries=generate_monthly_summaries(daily_snapshots, config.total_capital)
+        monthly_summaries=generate_monthly_summaries(daily_snapshots, config.total_capital, trades=all_trades)
     )

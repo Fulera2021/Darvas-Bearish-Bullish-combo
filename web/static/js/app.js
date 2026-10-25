@@ -587,10 +587,12 @@ function renderMonthlySummary(records) {
   if (tfoot) tfoot.innerHTML = '';
 
   if (!records || records.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="text-center">No monthly records available</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center">No monthly records available</td></tr>';
     return;
   }
 
+  let sumBuys = 0;
+  let sumSells = 0;
   let sumTradeRealized = 0;
   let sumMagicProfit = 0;
   let sumDividend = 0;
@@ -599,6 +601,8 @@ function renderMonthlySummary(records) {
   let peakCapitalBlocked = 0;
 
   records.forEach(r => {
+    sumBuys += r.num_buys || 0;
+    sumSells += r.num_sells || 0;
     sumTradeRealized += r.trade_realized_profit || 0;
     sumMagicProfit += r.magic_profit || 0;
     sumDividend += r.dividend_income || 0;
@@ -613,6 +617,8 @@ function renderMonthlySummary(records) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><strong>${r.year_mmm}</strong></td>
+      <td class="num-cell">${r.num_buys || 0}</td>
+      <td class="num-cell">${r.num_sells || 0}</td>
       <td class="num-cell ${(r.trade_realized_profit || 0) >= 0 ? 'text-profit' : 'text-loss'}">${formatNum(r.trade_realized_profit)}</td>
       <td class="num-cell text-profit">${formatNum(r.magic_profit)}</td>
       <td class="num-cell text-profit">${formatNum(r.dividend_income)}</td>
@@ -631,6 +637,8 @@ function renderMonthlySummary(records) {
     const trFoot = document.createElement('tr');
     trFoot.innerHTML = `
       <td><strong>Total / Peak</strong></td>
+      <td class="num-cell"><strong>${sumBuys}</strong></td>
+      <td class="num-cell"><strong>${sumSells}</strong></td>
       <td class="num-cell ${sumTradeRealized >= 0 ? 'text-profit' : 'text-loss'}"><strong>${formatNum(sumTradeRealized)}</strong></td>
       <td class="num-cell text-profit"><strong>${formatNum(sumMagicProfit)}</strong></td>
       <td class="num-cell text-profit"><strong>${formatNum(sumDividend)}</strong></td>

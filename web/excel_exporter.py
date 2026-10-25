@@ -64,6 +64,8 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
 
     # KPI Table
     kpis = [
+        ("Start Date", _format_date(getattr(result, "start_date", "-")), None),
+        ("End Date", _format_date(getattr(result, "end_date", "-")), None),
         ("Initial Capital", result.initial_capital, NUM_FORMAT_DECIMAL),
         ("Realized Trade Profit", result.realized_trade_profit, NUM_FORMAT_DECIMAL),
         ("Magic Profit (20DL)", result.total_magic_profit, NUM_FORMAT_DECIMAL),
@@ -101,6 +103,7 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
     # 2. Trade Journal sheet
     ws_journal = wb.create_sheet(title="Trade Journal")
     ws_journal.views.sheetView[0].showGridLines = True
+    ws_journal.freeze_panes = "A2"
 
     headers = [
         "Trade ID", "Type", "Slot ID", "Symbol", "Signal Date", "Buy Date", "Buy Price",
@@ -149,6 +152,7 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
     if result.magic_events:
         ws_magic = wb.create_sheet(title="Magic Events")
         ws_magic.views.sheetView[0].showGridLines = True
+        ws_magic.freeze_panes = "A2"
         m_headers = [
             "Event ID", "Date", "Trade ID", "Slot ID", "Buy Date", "Buy Price",
             "Rolling 20DL", "Close Price", "Loss %", "Profit Credit", "Open Tranches in Loss"
@@ -177,6 +181,7 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
     if result.dividend_events:
         ws_div = wb.create_sheet(title="Dividends")
         ws_div.views.sheetView[0].showGridLines = True
+        ws_div.freeze_panes = "A2"
         d_headers = [
             "Event ID", "Ex-Date", "Symbol", "Trade ID", "Slot ID", "Buy Date",
             "Shares Held", "Dividend / Share", "Total Payout"
@@ -221,9 +226,12 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
         return
     ws = wb.create_sheet(title="Monthly Summary")
     ws.views.sheetView[0].showGridLines = True
+    ws.freeze_panes = "A2"
 
     headers = [
         "Year-MMM\n(Calendar Month)",
+        "Buys\n(New tranches)",
+        "Sells\n(Tranches closed)",
         "Trade Realized\n(Profit from closed tranches)",
         "Magic Profit",
         "Dividend\n(Dividend income received)",
@@ -238,13 +246,15 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
         cell = ws.cell(row=1, column=c_idx, value=h)
         cell.font = FONT_TBL_HEADER
         cell.fill = FILL_HEADER
-        cell.alignment = Alignment(horizontal="center" if c_idx == 1 else "right", vertical="center", wrap_text=True)
+        cell.alignment = Alignment(horizontal="center" if c_idx in [1, 2, 3] else "right", vertical="center", wrap_text=True)
         cell.border = THIN_BORDER
     ws.row_dimensions[1].height = 28
 
     if not monthly_summaries:
         return
 
+    sum_buys = 0
+    sum_sells = 0
     sum_trade = 0.0
     sum_magic = 0.0
     sum_div = 0.0
@@ -253,6 +263,10 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
     peak_blocked = 0.0
 
     for r_idx, m in enumerate(monthly_summaries, 2):
+        n_buys = getattr(m, "num_buys", 0)
+        n_sells = getattr(m, "num_sells", 0)
+        sum_buys += n_buys
+        sum_sells += n_sells
         sum_trade += m.trade_realized_profit
         sum_magic += m.magic_profit
         sum_div += m.dividend_income
@@ -265,7 +279,7 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
         idle_cash = getattr(m, "idle_unused_cash", 0.0)
 
         row_data = [
-            m.year_mmm, m.trade_realized_profit, m.magic_profit, m.dividend_income, m.idle_interest,
+            m.year_mmm, n_buys, n_sells, m.trade_realized_profit, m.magic_profit, m.dividend_income, m.idle_interest,
             m.total_realized_profit, m.max_capital_blocked, idle_cash, m_ret
         ]
         is_even = (r_idx % 2 == 0)
@@ -277,9 +291,12 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
                 cell.fill = FILL_ZEBRA
             if c_idx == 1:
                 cell.alignment = ALIGN_CENTER
+            elif c_idx in [2, 3]:
+                cell.alignment = ALIGN_RIGHT
+                cell.number_format = NUM_FORMAT_INT
             else:
                 cell.alignment = ALIGN_RIGHT
-                if c_idx == 9:
+                if c_idx == 11:
                     cell.number_format = "0.00%"
                 else:
                     cell.number_format = NUM_FORMAT_DECIMAL
@@ -290,7 +307,7 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
     latest_idle = getattr(monthly_summaries[-1], "idle_unused_cash", 0.0) if monthly_summaries else 0.0
 
     footer_data = [
-        "Total / Peak", sum_trade, sum_magic, sum_div, sum_idle,
+        "Total / Peak", sum_buys, sum_sells, sum_trade, sum_magic, sum_div, sum_idle,
         sum_realized, peak_blocked, latest_idle, overall_ret
     ]
     for c_idx, val in enumerate(footer_data, 1):
@@ -300,9 +317,12 @@ def _build_monthly_summary_sheet(wb: openpyxl.Workbook, monthly_summaries: list,
         cell.border = THIN_BORDER
         if c_idx == 1:
             cell.alignment = ALIGN_CENTER
+        elif c_idx in [2, 3]:
+            cell.alignment = ALIGN_RIGHT
+            cell.number_format = NUM_FORMAT_INT
         else:
             cell.alignment = ALIGN_RIGHT
-            if c_idx == 9:
+            if c_idx == 11:
                 cell.number_format = "0.00%"
             else:
                 cell.number_format = NUM_FORMAT_DECIMAL
@@ -327,6 +347,8 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
     ws_dash["A2"].alignment = ALIGN_LEFT
 
     kpis = [
+        ("Start Date", _format_date(getattr(result, "start_date", "-")), None),
+        ("End Date", _format_date(getattr(result, "end_date", "-")), None),
         ("Total Portfolio Capital", result.total_capital, NUM_FORMAT_DECIMAL),
         ("Max Concurrent Stocks", result.max_active_stocks, NUM_FORMAT_INT),
         ("Tranches Per Stock", result.num_parts, NUM_FORMAT_INT),
@@ -365,6 +387,7 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
     # 2. Stock Breakdown sheet
     ws_breakdown = wb.create_sheet(title="Stock Breakdown")
     ws_breakdown.views.sheetView[0].showGridLines = True
+    ws_breakdown.freeze_panes = "A2"
 
     b_headers = [
         "Symbol", "Total Trades", "Completed Trades", "Open Trades",
@@ -405,6 +428,7 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
     if result.trades:
         ws_journal = wb.create_sheet(title="All Trades")
         ws_journal.views.sheetView[0].showGridLines = True
+        ws_journal.freeze_panes = "A2"
 
         j_headers = [
             "Trade ID", "Type", "Symbol", "Slot ID", "Signal Date", "Buy Date", "Buy Price",
@@ -452,6 +476,7 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
     if result.dividend_events:
         ws_div = wb.create_sheet(title="Dividends")
         ws_div.views.sheetView[0].showGridLines = True
+        ws_div.freeze_panes = "A2"
         d_headers = [
             "Event ID", "Ex-Date", "Symbol", "Trade ID", "Slot ID", "Buy Date",
             "Shares Held", "Dividend / Share", "Total Payout"

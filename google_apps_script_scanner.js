@@ -75,8 +75,9 @@ const GTT_CONFIG = {
   GTT_PRICE_COL: 3,           // Column C: GTT Order Price
   SIGNAL_TYPE_COL: 4,         // Column D: Signal Type ('Bullish Buy' or 'Bearish Buy')
   BUY_QTY_COL: 5,             // Column E: Suggested Buy Qty
-  DELETE_CHK_COL: 10,         // Column J: Delete checkbox
+  DELETE_CHK_COL: 10,         // Column J: Delete checkbox (J1: Clear All B4:L, J4+: Delete Row)
   TRANSFER_CHK_COL: 12,       // Column L: Transfer to Current Holdings checkbox
+  MASTER_DELETE_ROW: 1,       // Row 1: Master delete checkbox in J1 (clears B4:L)
   DEST_SHEET_NAME: 'Current Holdings',
   DEST_DATA_START_ROW: 8      // Starting data row in Current Holdings
 };
@@ -98,14 +99,13 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('⚡ Darvas Scanner')
     .addItem('▶ Run Scanner Now', 'runDarvasScanner')
-    .addItem('🛡 Force Fallback: Run via Backup Engine', 'runDarvasScannerGoogleFinanceOnly')
+    .addItem('🛡 Force Fallback Scanner', 'runDarvasScannerGoogleFinanceOnly')
     .addSeparator()
-    .addItem('🎨 Apply Visual Formatting Rules', 'applyScannerFormattingRulesMenu')
     .addItem('⏰ Setup Auto Weekly Trigger (Saturday 8 AM)', 'setupWeeklyTrigger')
-    .addItem('🗑 Remove Automated Trigger', 'removeWeeklyTrigger')
     .addSeparator()
-    .addItem('📋 Setup / Refresh GTT Tracker Tab', 'setupGttTrackerSheet')
+    .addItem('📋 Refresh GTT Tracker Tab', 'setupGttTrackerSheet')
     .addItem('🔄 Auto-Populate All Checkboxes (All Tabs)', 'refreshAllSheetCheckboxes')
+    .addItem('🗑 Clear All GTTs (GTT Tracker B4:L)', 'clearAllGttsMenu')
     .addSeparator()
     .addItem('ℹ About Scanner & Rules', 'showAboutDialog')
     .addToUi();
@@ -496,22 +496,11 @@ function onEdit(e) {
       if (!gttSheet) gttSheet = setupGttTrackerSheet();
 
       // Find next empty row in GTT Tracker (from DATA_START_ROW)
-      const gttLastRow = gttSheet.getLastRow();
-      const nextRow = Math.max(gttLastRow + 1, GTT_CONFIG.DATA_START_ROW);
+      const nextRow = getFirstEmptyRowInGttTab(gttSheet);
 
-      // Write: Col B = ticker, Col C = GTT Price, Col D = Signal Short Label
-      gttSheet.getRange(nextRow, GTT_CONFIG.TICKER_COL).setValue(ticker).setFontWeight('bold');
-      if (gttPrice !== '' && gttPrice !== null) {
-        gttSheet.getRange(nextRow, GTT_CONFIG.GTT_PRICE_COL)
-          .setValue(gttPrice)
-          .setNumberFormat('#,##0.00');
-      }
-      gttSheet.getRange(nextRow, GTT_CONFIG.SIGNAL_TYPE_COL).setValue(signalShort);
-
-      // Light formatting for new GTT row
-      gttSheet.getRange(nextRow, GTT_CONFIG.TICKER_COL, 1, 3)
-        .setBackground('#F0FDF4')
-        .setFontColor('#14532D');
+      // Write values to Col B-D: do not apply any formatting, just paste as values
+      const numGttPrice = (gttPrice !== '' && gttPrice !== null && !isNaN(gttPrice)) ? Number(gttPrice) : (gttPrice || '');
+      gttSheet.getRange(nextRow, GTT_CONFIG.TICKER_COL, 1, 3).setValues([[ticker, numGttPrice, signalShort]]);
 
       // Add checkboxes (Col J & Col L) for this new row
       refreshGttCheckboxes(gttSheet);
@@ -525,7 +514,23 @@ function onEdit(e) {
     }
 
     // -----------------------------------------------------------------------
-    // BRANCH B: GTT Tracker tab — Col J (Delete) checkbox checked
+    // BRANCH B0: GTT Tracker tab — Master Delete Checkbox in J1 checked
+    // -----------------------------------------------------------------------
+    if (sheetName === GTT_CONFIG.SHEET_NAME &&
+      editedRow === GTT_CONFIG.MASTER_DELETE_ROW &&
+      editedCol === GTT_CONFIG.DELETE_CHK_COL &&
+      (e.value === 'TRUE' || range.getValue() === true)) {
+
+      // Explicitly uncheck J1 checkbox and flush to UI immediately
+      range.setValue(false);
+      SpreadsheetApp.flush();
+
+      clearAllGtts(sheet);
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // BRANCH B: GTT Tracker tab — Col J (Delete single row) checkbox checked
     // -----------------------------------------------------------------------
     if (sheetName === GTT_CONFIG.SHEET_NAME &&
       editedCol === GTT_CONFIG.DELETE_CHK_COL &&
@@ -819,6 +824,9 @@ function setupGttTrackerSheet() {
     "=IFERROR(ARRAYFORMULA(C3:C/H3:H-1))"
   );
 
+  // --- Ensure Master Delete Checkbox in J1 ---
+  setupGttMasterDeleteCheckbox(gttSheet);
+
   // --- Populate Checkboxes in Col J (Delete) & Col L (Transfer) ---
   refreshGttCheckboxes(gttSheet);
 
@@ -831,13 +839,14 @@ function setupGttTrackerSheet() {
         '• Col B: NSE Code\n• Col C: GTT Price\n• Col D: Signal Type\n' +
         '• Col E: Qty (budget ÷ GTT price)\n• Col F: Total cost\n' +
         '• Col G: In Holdings?\n• Col H: CMP\n• Col I: GTT vs CMP %\n' +
-        '• Col J: ☑ Check to DELETE row\n' +
+        '• Cell J1: ☑ Check to DELETE ALL GTTs (clear B4:L)\n' +
+        '• Col J: ☑ Check to DELETE single row\n' +
         '• Col L: ☑ Check to TRANSFER stock to Current Holdings'
       );
     } catch (uiErr) { /* suppress if called from trigger */ }
   } else {
     try {
-      SpreadsheetApp.getUi().alert('✅ GTT Tracker formulas refreshed in E3:I3 and checkboxes updated in Col J (Delete) & Col L (Transfer).');
+      SpreadsheetApp.getUi().alert('✅ GTT Tracker formulas refreshed in E3:I3, Master Delete checkbox set in J1, and row checkboxes updated in Col J & Col L.');
     } catch (uiErr) { /* suppress if called from trigger */ }
   }
 
@@ -855,6 +864,10 @@ function setupGttTrackerSheet() {
  */
 function refreshGttCheckboxes(gttSheet) {
   if (!gttSheet) return;
+
+  // Ensure Master Delete Checkbox in J1 is configured
+  setupGttMasterDeleteCheckbox(gttSheet);
+
   const lastRow = gttSheet.getLastRow();
   if (lastRow < GTT_CONFIG.DATA_START_ROW) return;
 
@@ -916,6 +929,115 @@ function refreshGttCheckboxes(gttSheet) {
  */
 function refreshGttDeleteCheckboxes(gttSheet) {
   refreshGttCheckboxes(gttSheet);
+}
+
+/**
+ * Ensures the Master Delete Checkbox in J1 of the GTT Tracker tab is set up.
+ * When checked, this checkbox clears all GTT entries (content of B4:L).
+ *
+ * @param {SpreadsheetApp.Sheet} gttSheet
+ */
+function setupGttMasterDeleteCheckbox(gttSheet) {
+  if (!gttSheet) return;
+  const j1Cell = gttSheet.getRange(GTT_CONFIG.MASTER_DELETE_ROW, GTT_CONFIG.DELETE_CHK_COL); // J1
+  const rule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+  j1Cell.setDataValidation(rule);
+  const val = j1Cell.getValue();
+  if (val !== true && val !== false) {
+    j1Cell.setValue(false);
+  }
+  j1Cell.setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setNote('☑ Check to delete all GTTs in sheet (clear content of B4:L)');
+}
+
+/**
+ * Clears all GTTs in the 'GTT Tracker' tab by clearing the content of B4:L,
+ * clearing sequential S.No. in Col A, removing row-level checkboxes in Col J & Col L,
+ * preserving all existing cell formatting in B-D, and resetting the J1 checkbox back to false.
+ *
+ * @param {SpreadsheetApp.Sheet} [gttSheet] The GTT Tracker sheet.
+ */
+function clearAllGtts(gttSheet) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = gttSheet || ss.getSheetByName(GTT_CONFIG.SHEET_NAME);
+  if (!sheet) return;
+
+  const maxRows = sheet.getMaxRows();
+  if (maxRows >= GTT_CONFIG.DATA_START_ROW) {
+    const numRows = maxRows - GTT_CONFIG.DATA_START_ROW + 1;
+
+    // 1. Clear content ONLY of B4:L (Cols 2 to 12 = 11 columns: B to L)
+    // Preserves all cell formatting, colors, borders, and number formats in B-D
+    sheet.getRange(GTT_CONFIG.DATA_START_ROW, GTT_CONFIG.TICKER_COL, numRows, 11).clearContent();
+
+    // 2. Clear sequential S.No. content in Col A
+    sheet.getRange(GTT_CONFIG.DATA_START_ROW, 1, numRows, 1).clearContent();
+
+    // 3. Clear row-level checkboxes in Col J & Col L
+    sheet.getRange(GTT_CONFIG.DATA_START_ROW, GTT_CONFIG.DELETE_CHK_COL, numRows, 1)
+      .clearContent()
+      .clearDataValidations()
+      .setBackground(null);
+
+    sheet.getRange(GTT_CONFIG.DATA_START_ROW, GTT_CONFIG.TRANSFER_CHK_COL, numRows, 1)
+      .clearContent()
+      .clearDataValidations()
+      .setBackground(null);
+  }
+
+  // 4. Reset Master Delete Checkbox in J1 back to false (unchecked)
+  const j1Cell = sheet.getRange(GTT_CONFIG.MASTER_DELETE_ROW, GTT_CONFIG.DELETE_CHK_COL);
+  j1Cell.setValue(false);
+  SpreadsheetApp.flush();
+
+  ss.toast('🗑 All GTTs deleted (B4:L content cleared).', 'GTT Tracker Cleared', 4);
+}
+
+/**
+ * Menu wrapper to clear all GTTs in GTT Tracker (B4:L).
+ */
+function clearAllGttsMenu() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const gttSheet = ss.getSheetByName(GTT_CONFIG.SHEET_NAME);
+  if (!gttSheet) {
+    SpreadsheetApp.getUi().alert(`Sheet '${GTT_CONFIG.SHEET_NAME}' was not found.`);
+    return;
+  }
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert('Confirm Delete All GTTs', 'Are you sure you want to delete all GTTs in GTT Tracker (clear content of B4:L)?', ui.ButtonSet.YES_NO);
+  if (response === ui.Button.YES) {
+    clearAllGtts(gttSheet);
+  }
+}
+
+/**
+ * Finds the first empty data row in the 'GTT Tracker' tab starting from row 4 onwards.
+ * A row is considered empty if Column B (Stock Code) is blank.
+ *
+ * @param {SpreadsheetApp.Sheet} gttSheet
+ * @returns {number} 1-indexed row number (>= 4)
+ */
+function getFirstEmptyRowInGttTab(gttSheet) {
+  const startRow = GTT_CONFIG.DATA_START_ROW; // Row 4
+  const maxRows = gttSheet.getMaxRows();
+  if (maxRows < startRow) {
+    gttSheet.insertRowsAfter(maxRows, startRow - maxRows + 10);
+  }
+
+  const numToCheck = gttSheet.getMaxRows() - startRow + 1;
+  const values = gttSheet.getRange(startRow, GTT_CONFIG.TICKER_COL, numToCheck, 1).getValues();
+
+  for (let i = 0; i < values.length; i++) {
+    const colB = values[i][0];
+    const isColBBlank = (colB === '' || colB === null || colB === undefined);
+    if (isColBBlank) {
+      return startRow + i;
+    }
+  }
+
+  gttSheet.insertRowAfter(gttSheet.getMaxRows());
+  return gttSheet.getMaxRows();
 }
 
 /**
@@ -1543,11 +1665,11 @@ function ensureRow6Formulas(sheet) {
   }
 
   const formulas = {
-    'E6': "=IFERROR(ARRAYFORMULA(XLOOKUP(J6:J,'Current Holdings'!B:B,'Current Holdings'!C:C,,,-1)))",
+    'E6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,XLOOKUP(J6:J,'Current Holdings'!B:B,'Current Holdings'!C:C,,,-1)))",
     'F6': "=IFERROR(ARRAYFORMULA(IF(O6:O=\"\",,O6:O/E6:E-1)))",
-    'G6': "=IFERROR(ARRAYFORMULA(XLOOKUP(J6:J,'Current Holdings'!S:S,'Current Holdings'!X:X)))",
-    'H6': "=IFERROR(ARRAYFORMULA(IF(VLOOKUP(J6:J,FILTER('Current Holdings'!B8:B,'Current Holdings'!E8:E=\"Bullish Buy\"),1,0)<>\"\",\"Yes\",\"No\")))",
-    'O6': "=IFERROR(ARRAYFORMULA(IF(K6:K=\"\",,CEILING(M6:M*1.005,0.05))))",
+    'G6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,XLOOKUP(J6:J,'Current Holdings'!S:S,'Current Holdings'!X:X)))",
+    'H6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,IF(VLOOKUP(J6:J,FILTER('Current Holdings'!B8:B,'Current Holdings'!E8:E=\"Bullish Buy\"),1,0)<>\"\",\"Yes\",\"No\")))",
+    'O6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,CEILING(M6:M*1.005,0.05))))",
     'P6': "=IFERROR(MAP(J6:J,LAMBDA(ticker, IF(ticker=\"\",, GOOGLEFINANCE(ticker,\"price\")))))"
   };
 
@@ -1614,7 +1736,7 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
   sheet.setRowHeight(3, 16);
 
   // Safely clear old contents, formats & reset merges across G1:Q3
-  const oldHeaderRange = sheet.getRange('G1:Q3');
+  const oldHeaderRange = sheet.getRange('J1:Q3');
   oldHeaderRange.breakApart();
   oldHeaderRange.clearContent();
   oldHeaderRange.clearFormat();

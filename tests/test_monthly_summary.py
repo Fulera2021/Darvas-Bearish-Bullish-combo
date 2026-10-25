@@ -168,6 +168,8 @@ class TestMonthlySummary(unittest.TestCase):
         self.assertGreater(len(data["monthly_summary"]), 0)
         item = data["monthly_summary"][0]
         self.assertIn("year_mmm", item)
+        self.assertIn("num_buys", item)
+        self.assertIn("num_sells", item)
         self.assertIn("trade_realized_profit", item)
         self.assertIn("total_realized_profit", item)
         self.assertIn("net_monthly_pnl", item)

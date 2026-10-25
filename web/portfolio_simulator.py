@@ -50,6 +50,8 @@ class PortfolioBacktestResult:
     open_trades: int = 0
     ending_overall_capital: float = 0.0
     ending_tranche_amount: float = 0.0
+    start_date: str = ""
+    end_date: str = ""
     stock_summaries: List[StockSummary] = field(default_factory=list)
     trades: List[Tranche] = field(default_factory=list)
     magic_events: List[MagicProfitEvent] = field(default_factory=list)
@@ -605,9 +607,11 @@ def run_portfolio_universe_simulation(
         open_trades=len(open_trades_list),
         ending_overall_capital=ending_overall_capital,
         ending_tranche_amount=ending_tranche_amount,
+        start_date=config.start_date,
+        end_date=config.end_date,
         stock_summaries=stock_summaries,
         trades=all_trades,
         magic_events=all_magic_events,
         dividend_events=all_dividend_events,
-        monthly_summaries=generate_monthly_summaries(daily_snapshots, config.total_capital)
+        monthly_summaries=generate_monthly_summaries(daily_snapshots, config.total_capital, trades=all_trades)
     )

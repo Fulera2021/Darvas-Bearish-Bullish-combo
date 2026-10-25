@@ -160,13 +160,23 @@ flowchart LR
 ```
 
 ### 1. From Scanner to GTT Tracker:
-- When a buy-eligible stock (`Bullish Buy Triggered` or `Bearish Buy Triggered`) is selected via the checkbox in **Column R (GTT Select)** on the `Scanner` tab:
-  - It moves automatically into **`GTT Tracker`** at the next available row.
-  - Col B: Stock Code, Col C: GTT Order Price, Col D: Signal Type.
+- When a buy-eligible stock (`Bullish Buy Triggered` or `Bearish Buy Triggered`) is selected via the checkbox in **Column I (GTT Select)** on the `Scanner` tab:
+  - It moves automatically into **`GTT Tracker`** at the next available row (finding the first empty row in Column B from row 4 onwards).
+  - **Col B:** Stock Code, **Col C:** GTT Order Price, **Col D:** Signal Type.
+  - **No formatting applied:** Data in Columns B–D is strictly pasted as **pure values**, preserving any existing sheet formats and applying zero custom backgrounds, font weights, or colors.
   - Rows are cleared from `Scanner` results so you don't place duplicate orders.
   - S.No. (Col A), Delete checkboxes (Col J, soft red), and Transfer checkboxes (Col L, soft green) are populated automatically.
 
-### 2. Transferring Executed GTT Orders to 'Current Holdings' (Column L):
+### 2. Deleting GTT Orders (Master Checkbox J1 vs. Single Row Col J):
+- **Master Delete Checkbox in Cell J1:**
+  - Checking **☑ J1** immediately deletes all GTTs across the sheet by clearing the entire contents of **`B4:L`** (preserving all existing cell formatting in `B–D`).
+  - Also clears serial numbers in Col A, removes row-level checkboxes in Col J and Col L, and automatically resets the **J1** checkbox back to unchecked (`false`).
+  - Row 3 formulas (`E3:I3`) and top headers remain completely intact.
+  - You can also trigger this via the top menu: **`⚡ Darvas Scanner > 🗑 Clear All GTTs (GTT Tracker B4:L)`**.
+- **Single-Row Delete Checkbox (Column J, row 4 onwards):**
+  - Checking the checkbox in **Col J** on any individual data row deletes only that specific row. Remaining rows shift up and serial numbers in Col A re-sequence automatically.
+
+### 3. Transferring Executed GTT Orders to 'Current Holdings' (Column L):
 When a GTT order triggers and executes in your broker, check the **☑ Column L (Transfer Bought Stocks to Current Holdings)** box:
 1. **Rule 1 (Stock already in Current Holdings):**
    - The script scans Column B of `'Current Holdings'`.
@@ -183,7 +193,7 @@ When a GTT order triggers and executes in your broker, check the **☑ Column L 
    - The row is deleted from `GTT Tracker`.
    - Remaining rows shift up seamlessly, checkboxes in Col J and Col L are refreshed, and S.No. in Col A is automatically re-sequenced (1, 2, 3...).
 
-### 3. Moving Sold Positions to 'Sold' Tab (Column P in Current Holdings):
+### 4. Moving Sold Positions to 'Sold' Tab (Column P in Current Holdings):
 - In the **`Current Holdings`** tab, checkboxes in **Column P (Move to Sold tab)** are automatically populated for any row where **Column I (Sell Date)** is not blank (rows 8 onwards, leaving row 7 formulas untouched).
 - Checking the box in **Column P**:
   1. **Copies data as values** from **Col A to Col J** (Columns 1–10).
