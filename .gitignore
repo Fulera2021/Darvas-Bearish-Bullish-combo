@@ -13,3 +13,6 @@ htmlcov/
 *.sqlite3
 data/*.db
 data/price_cache.db*
+
+# Office temp files
+~$*

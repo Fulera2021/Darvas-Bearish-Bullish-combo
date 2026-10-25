@@ -1665,10 +1665,10 @@ function ensureRow6Formulas(sheet) {
   }
 
   const formulas = {
-    'E6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,XLOOKUP(J6:J,'Current Holdings'!B:B,'Current Holdings'!C:C,,,-1)))",
+    'E6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,XLOOKUP(J6:J,'Current Holdings'!B:B,'Current Holdings'!C:C,,,-1))))",
     'F6': "=IFERROR(ARRAYFORMULA(IF(O6:O=\"\",,O6:O/E6:E-1)))",
-    'G6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,XLOOKUP(J6:J,'Current Holdings'!S:S,'Current Holdings'!X:X)))",
-    'H6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,IF(VLOOKUP(J6:J,FILTER('Current Holdings'!B8:B,'Current Holdings'!E8:E=\"Bullish Buy\"),1,0)<>\"\",\"Yes\",\"No\")))",
+    'G6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,XLOOKUP(J6:J,'Current Holdings'!S:S,'Current Holdings'!X:X))))",
+    'H6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,IF(VLOOKUP(J6:J,FILTER('Current Holdings'!B8:B,'Current Holdings'!E8:E=\"Bullish Buy\"),1,0)<>\"\",\"Yes\",\"No\"))))",
     'O6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,CEILING(M6:M*1.005,0.05))))",
     'P6': "=IFERROR(MAP(J6:J,LAMBDA(ticker, IF(ticker=\"\",, GOOGLEFINANCE(ticker,\"price\")))))"
   };
@@ -1736,7 +1736,7 @@ function updateScannerSummaryHeader(sheet, bullishCount, bearishCount) {
   sheet.setRowHeight(3, 16);
 
   // Safely clear old contents, formats & reset merges across G1:Q3
-  const oldHeaderRange = sheet.getRange('J1:Q3');
+  const oldHeaderRange = sheet.getRange('J1:P3');
   oldHeaderRange.breakApart();
   oldHeaderRange.clearContent();
   oldHeaderRange.clearFormat();
