@@ -199,4 +199,51 @@ When a GTT order triggers and executes in your broker, check the **☑ Column L 
   1. **Copies data as values** from **Col A to Col J** (Columns 1–10).
   2. **Pastes into `Sold` tab:** Pastes into the **first empty row after row 4 (row 5 onwards)** of the `'Sold'` tab in Col A–J with zero formatting applied.
   3. **Deletes source row:** The entire row is deleted from `'Current Holdings'`, smoothly shifting remaining rows up.
-  4. **Auto-refreshes:** Checkboxes across all tabs (`Scanner`, `GTT Tracker`, `Current Holdings`) auto-populate automatically whenever conditions are satisfied, on any edit, and on opening the sheet. You can also manually trigger `⚡ Darvas Scanner > 🔄 Auto-Populate All Checkboxes (All Tabs)` from the top menu.
+  4. **Auto-refreshes:** Checkboxes across all tabs (`Scanner`, `GTT Tracker`, `Current Holdings`, `Idle Money - Holdings`) auto-populate automatically whenever conditions are satisfied, on any edit, and on opening the sheet. You can also manually trigger `⚡ Darvas Scanner > 🔄 Auto-Populate All Checkboxes (All Tabs)` from the top menu.
+
+---
+
+## 6. Idle Money Automation (FIFO Lot Deduction Engine)
+
+The system automates idle cash ETF holdings management between **`Idle Money - Holdings`** and **`Idle Money - Sold`**:
+
+```mermaid
+flowchart TD
+    Inputs["Inputs in 'Idle Money - Holdings'<br>C2: ETF Code | E2: Sold Units | F2: Sell Price"] --> ChkH2["☑ Auto-populates Checkbox in H2"]
+    ChkH2 -- "Check H2 (Confirm Sale)" --> FIFO["FIFO Lot Matching Engine (Col A:D, Row 7+)"]
+    FIFO --> Sold["Append to 'Idle Money - Sold' (Col A:F, Row 4+)"]
+    FIFO --> Deduct["Holdings Update:<br>• Fully sold lots → Row deleted<br>• Partially sold lots → Col D Bought Units reduced"]
+    Deduct --> Reset["Clean Up:<br>• Clear E2 & F2<br>• Remove H2 Checkbox"]
+```
+
+### Layout Mapping:
+1. **`Idle Money - Holdings` Layout:**
+   - **Row 1–2 Inputs:**
+     - **C2:** NSE / ETF Code (dropdown selector, e.g. `NSE:LIQUIDCASE`, `NSE:LIQUID1`)
+     - **D2:** Total current holding units
+     - **E2:** `Sold Units` (number of units being liquidated)
+     - **F2:** `Sell Price` (execution price)
+     - **G2:** Sold Amount (formula: `E2 * F2`)
+     - **H2:** Dynamic **Execute Sale** Checkbox (appears automatically when a valid positive number is entered in E2)
+   - **Row 5 Headers:** `NSE Code` (Col A), `Buy Date` (Col B), `Buy Price` (Col C), `Bought Units` (Col D), `Invested Amount` (Col E), `CMP` (Col F), `Current Value` (Col G), `Notional Profit` (Col H), `Profit%` (Col I), `Holding Days` (Col J).
+   - **Row 7 Downwards:** Individual purchase lots.
+
+2. **`Idle Money - Sold` Layout:**
+   - **Row 2 Headers:** `ETF Code` (Col A), `Buy Date` (Col B), `Buy Price` (Col C), `Sold Units` (Col D), `Sell Date` (Col E), `Sell Price` (Col F).
+   - **Row 4 Downwards:** Data records.
+
+### How It Works:
+1. **Entering Sale Details:**
+   - Enter or select the ETF Code in **C2**, number of units in **E2**, and sell price in **F2**.
+   - As soon as **E2** is filled with a valid positive number, a confirmation checkbox is automatically inserted into **H2**. If E2 is cleared, H2 is automatically removed.
+2. **Executing the Sale (Check H2):**
+   - Click the checkbox in **H2** (or use menu **`⚡ Darvas Scanner > 💵 Idle Money: Process Sale`**).
+   - The script searches for matching ETF lots in Row 7 onwards, sorts them strictly by **oldest Buy Date (FIFO)**, and validates that total available units cover the requested sale.
+   - For each lot:
+     - **Fully sold lots:** The entire row is deleted, shifting subsequent rows up.
+     - **Partially sold lots:** Only **Column D (Bought Units)** is updated with the remaining balance. All formulas in Columns E:J (`Invested Amount`, `CMP`, `Current Value`, `Notional Profit`, etc.) remain completely untouched and recalculate automatically.
+   - Appends the transaction payload to **`Idle Money - Sold`** at the first empty row after row 3 (Row 4 onwards) as **pure values**, completely preserving pre-applied conditional formatting.
+   - Clears **E2** and **F2**, removes the checkbox from **H2**, and completes the sale.
+
+
+

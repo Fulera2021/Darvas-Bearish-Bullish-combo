@@ -1,3 +1,5 @@
+/**@OnlyCurrentDoc */
+
 /**
  * ============================================================================
  * DARVAS BEARISH + BULLISH COMBO SYSTEMATIC SCANNER FOR GOOGLE SHEETS
@@ -92,6 +94,20 @@ const HOLDINGS_CONFIG = {
   SOLD_DATA_START_ROW: 5      // First data row in Sold tab (Row 5 onwards)
 };
 
+const IDLE_MONEY_CONFIG = {
+  HOLDINGS_SHEET_NAME: 'Idle Money - Holdings',
+  SOLD_SHEET_NAME: 'Idle Money - Sold',
+  DATA_START_ROW: 7,
+  ETF_CODE_CELL: 'C2',
+  SOLD_UNITS_CELL: 'E2',
+  SELL_PRICE_CELL: 'F2',
+  TRIGGER_CHK_CELL: 'H2',
+  SOLD_DATA_START_ROW: 4
+};
+
+var IDLE_MONEY_HOLDINGS_TAB_NAME = 'Idle Money - Holdings';
+var IDLE_MONEY_SOLD_TAB_NAME = 'Idle Money - Sold';
+
 /**
  * Creates custom menu when Google Sheet is opened.
  */
@@ -106,6 +122,8 @@ function onOpen() {
     .addItem('📋 Refresh GTT Tracker Tab', 'setupGttTrackerSheet')
     .addItem('🔄 Auto-Populate All Checkboxes (All Tabs)', 'refreshAllSheetCheckboxes')
     .addItem('🗑 Clear All GTTs (GTT Tracker B4:L)', 'clearAllGttsMenu')
+    .addSeparator()
+    .addItem('💵 Idle Money: Process Sale', 'manualTriggerIdleMoneySale')
     .addSeparator()
     .addItem('ℹ About Scanner & Rules', 'showAboutDialog')
     .addToUi();
@@ -469,6 +487,14 @@ function onEdit(e) {
     const editedRow = range.getRow();
     const editedCol = range.getColumn();
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // -----------------------------------------------------------------------
+    // BRANCH 0: Idle Money - Holdings tab — Checkbox trigger & sale processing
+    // -----------------------------------------------------------------------
+    if (sheetName === IDLE_MONEY_HOLDINGS_TAB_NAME) {
+      handleIdleMoneyHoldingsEdit(e);
+      return;
+    }
 
     // -----------------------------------------------------------------------
     // BRANCH A: Scanner tab — Col I (GTT Select) checkbox checked
@@ -1198,6 +1224,12 @@ function refreshAllSheetCheckboxes() {
   const holdingsSheet = ss.getSheetByName(HOLDINGS_CONFIG.SHEET_NAME);
   if (holdingsSheet) {
     refreshCurrentHoldingsCheckboxes(holdingsSheet);
+  }
+
+  // 4. Idle Money - Holdings tab
+  const idleHoldingsSheet = ss.getSheetByName(IDLE_MONEY_HOLDINGS_TAB_NAME);
+  if (idleHoldingsSheet) {
+    refreshIdleMoneyCheckboxes(idleHoldingsSheet);
   }
 }
 
@@ -1993,4 +2025,286 @@ function convertToYfTicker(ticker) {
     clean = clean + '.NS';
   }
   return clean;
+}
+
+// ==============================================================================
+// IDLE MONEY AUTOMATION (HOLDINGS -> SOLD WITH FIFO LOT DEDUCTION)
+// ==============================================================================
+
+/**
+ * Refreshes checkboxes on 'Idle Money - Holdings':
+ * - If E2 has a valid positive sold units count, ensures H2 has a checkbox.
+ */
+function refreshIdleMoneyCheckboxes(idleSheet) {
+  if (!idleSheet) return;
+  var e2Val = idleSheet.getRange('E2').getValue();
+  var h2Range = idleSheet.getRange('H2');
+  if (e2Val !== '' && e2Val !== null && !isNaN(e2Val) && Number(e2Val) > 0) {
+    var h2Val = h2Range.getValue();
+    if (typeof h2Val !== 'boolean') {
+      h2Range.insertCheckboxes();
+      h2Range.setValue(false);
+    }
+  } else {
+    h2Range.clearContent();
+    h2Range.clearDataValidations();
+  }
+  // Ensure I2 is clean
+  idleSheet.getRange('I2').clearContent().clearDataValidations();
+}
+
+/**
+ * Handles edit events originating from 'Idle Money - Holdings'.
+ * 1. Populates checkbox in H2 when E2 (Sold Units) is entered; clears H2 if E2 is emptied.
+ * 2. Triggers FIFO sale processing when H2 checkbox is checked.
+ */
+function handleIdleMoneyHoldingsEdit(e) {
+  var range = e.range;
+  var sheet = range.getSheet();
+  var startRow = range.getRow();
+  var endRow = startRow + range.getNumRows() - 1;
+  var startCol = range.getColumn();
+  var endCol = startCol + range.getNumColumns() - 1;
+
+  // 1. Detect edit in E2 (Row 2, Column 5): Sold Units
+  if (startRow <= 2 && endRow >= 2 && startCol <= 5 && endCol >= 5) {
+    var e2Val = sheet.getRange('E2').getValue();
+    var h2Range = sheet.getRange('H2');
+    if (e2Val !== '' && e2Val !== null && !isNaN(e2Val) && Number(e2Val) > 0) {
+      var currentVal = h2Range.getValue();
+      if (typeof currentVal !== 'boolean') {
+        h2Range.insertCheckboxes();
+        h2Range.setValue(false);
+      }
+    } else {
+      h2Range.clearContent();
+      h2Range.clearDataValidations();
+    }
+  }
+
+  // 2. Detect click on H2 (Row 2, Column 8): Trigger Sale
+  if (startRow <= 2 && endRow >= 2 && startCol <= 8 && endCol >= 8) {
+    var h2Val = sheet.getRange('H2').getValue();
+    if (h2Val === true || (e && e.value === 'TRUE')) {
+      processIdleMoneySale(sheet);
+    }
+  }
+}
+
+/**
+ * Executes the sale:
+ * - Validates C2 (ETF Code), E2 (Sold Units), F2 (Sell Price).
+ * - Finds matching lots in Column A (Row 7+), sorted FIFO by oldest Buy Date (Column B).
+ * - Deducts units lot-by-lot:
+ *   - Lots reduced to 0 units have their rows deleted entirely.
+ *   - Partially sold lots have Column D (Bought Units) updated. Existing formulas in E:J are untouched.
+ * - Appends records to destination tab 'Idle Money - Sold' (Col A:F) at the first empty row after row 3.
+ * - Leaves pre-applied formatting in 'Idle Money - Sold' completely untouched.
+ * - Clears E2 and F2, removes H2 checkbox.
+ */
+function processIdleMoneySale(sheet) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!sheet) {
+    sheet = ss.getSheetByName(IDLE_MONEY_HOLDINGS_TAB_NAME);
+  }
+  if (!sheet) return;
+
+  var h2Range = sheet.getRange('H2');
+
+  try {
+    // 1. Read & validate inputs
+    var etfCodeRaw = sheet.getRange('C2').getValue();
+    var soldUnitsRaw = sheet.getRange('E2').getValue();
+    var sellPriceRaw = sheet.getRange('F2').getValue();
+
+    var etfCode = etfCodeRaw ? etfCodeRaw.toString().trim() : '';
+    var soldUnits = Number(soldUnitsRaw);
+    var sellPrice = Number(sellPriceRaw);
+
+    if (!etfCode) {
+      ss.toast('Please select an ETF Code in C2 before confirming.', 'Idle Money - Incomplete', 5);
+      h2Range.setValue(false);
+      return;
+    }
+    if (isNaN(soldUnits) || soldUnits <= 0) {
+      ss.toast('Sold Units in E2 must be a positive number.', 'Idle Money - Incomplete', 5);
+      h2Range.setValue(false);
+      return;
+    }
+    if (isNaN(sellPrice) || sellPrice <= 0) {
+      ss.toast('Sell Price in F2 must be a positive number.', 'Idle Money - Incomplete', 5);
+      h2Range.setValue(false);
+      return;
+    }
+
+    // 2. Read Holdings data from Row 7 downwards
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 7) {
+      ss.toast('No holding records found in row 7 onwards.', 'Idle Money - Error', 5);
+      h2Range.setValue(false);
+      return;
+    }
+
+    var numCols = Math.max(sheet.getLastColumn(), 10);
+    var numRows = lastRow - 6;
+    var range = sheet.getRange(7, 1, numRows, numCols);
+    var values = range.getValues();
+    var formulas = range.getFormulas();
+    var backgrounds = range.getBackgrounds();
+    var fontWeights = range.getFontWeights();
+    var numberFormats = range.getNumberFormats();
+
+    // 3. Find candidate lots for the selected ETF Code
+    var candidateLots = [];
+    for (var i = 0; i < values.length; i++) {
+      var rowCode = values[i][0] ? values[i][0].toString().trim() : '';
+      var boughtUnits = Number(values[i][3]); // Column D = Bought Units
+      if (isMatchingEtfCode(rowCode, etfCode) && !isNaN(boughtUnits) && boughtUnits > 0) {
+        candidateLots.push({
+          rowIndex: 7 + i,
+          dataIndex: i,
+          rowCode: rowCode,
+          buyDate: values[i][1],
+          buyPrice: values[i][2],
+          boughtUnits: boughtUnits,
+          timestamp: parseDateToTimestamp(values[i][1]),
+          fullValues: values[i],
+          fullFormulas: formulas[i],
+          fullBackgrounds: backgrounds[i],
+          fullFontWeights: fontWeights[i],
+          fullNumberFormats: numberFormats[i]
+        });
+      }
+    }
+
+    if (candidateLots.length === 0) {
+      ss.toast('No available holding lots found for ETF Code: ' + etfCode, 'Idle Money - Error', 5);
+      h2Range.setValue(false);
+      return;
+    }
+
+    // 4. Validate total available units
+    var totalAvailableUnits = 0;
+    for (var k = 0; k < candidateLots.length; k++) {
+      totalAvailableUnits += candidateLots[k].boughtUnits;
+    }
+
+    if (soldUnits > totalAvailableUnits) {
+      ss.toast('Sold Units (' + soldUnits + ') exceed total available holdings (' + totalAvailableUnits + ') for ' + etfCode + '.', 'Idle Money - Insufficient Units', 6);
+      h2Range.setValue(false);
+      return;
+    }
+
+    // 5. Sort candidate lots FIFO by oldest Buy Date
+    candidateLots.sort(function(a, b) {
+      if (a.timestamp !== b.timestamp) {
+        return a.timestamp - b.timestamp;
+      }
+      return a.rowIndex - b.rowIndex;
+    });
+
+    // 6. Access Destination tab 'Idle Money - Sold'
+    var soldSheet = ss.getSheetByName(IDLE_MONEY_SOLD_TAB_NAME);
+    if (!soldSheet) {
+      soldSheet = ss.insertSheet(IDLE_MONEY_SOLD_TAB_NAME);
+      soldSheet.getRange('A2:F2').setValues([['ETF Code', 'Buy Date', 'Buy Price', 'Sold Units', 'Sell Date', 'Sell Price']]).setFontWeight('bold');
+    }
+
+    // 7. Calculate FIFO deductions & build Sold payloads
+    var ssTimeZone = ss.getSpreadsheetTimeZone() || 'Asia/Kolkata';
+    var now = new Date();
+    var year = Number(Utilities.formatDate(now, ssTimeZone, 'yyyy'));
+    var month = Number(Utilities.formatDate(now, ssTimeZone, 'MM'));
+    var day = Number(Utilities.formatDate(now, ssTimeZone, 'dd'));
+    var today = new Date(year, month - 1, day);
+
+    var remainingToSell = soldUnits;
+    var payloads = [];
+    var rowsToDelete = [];
+    var rowToModify = null;
+
+    for (var m = 0; m < candidateLots.length; m++) {
+      if (remainingToSell <= 0) break;
+      var lot = candidateLots[m];
+      var lotUnits = lot.boughtUnits;
+      var cleanBuyDate = lot.buyDate;
+      if (cleanBuyDate instanceof Date) {
+        var bYear = Number(Utilities.formatDate(cleanBuyDate, ssTimeZone, 'yyyy'));
+        var bMonth = Number(Utilities.formatDate(cleanBuyDate, ssTimeZone, 'MM'));
+        var bDay = Number(Utilities.formatDate(cleanBuyDate, ssTimeZone, 'dd'));
+        cleanBuyDate = new Date(bYear, bMonth - 1, bDay);
+      }
+
+      if (lotUnits <= remainingToSell) {
+        // Fully sold lot -> row will be deleted
+        var unitsDeducted = lotUnits;
+        remainingToSell -= lotUnits;
+        rowsToDelete.push(lot.rowIndex);
+        payloads.push([etfCode, cleanBuyDate, lot.buyPrice, unitsDeducted, today, sellPrice]);
+      } else {
+        // Partially sold lot -> column D updated
+        var unitsDeducted = remainingToSell;
+        var newUnits = lotUnits - remainingToSell;
+        remainingToSell = 0;
+        rowToModify = {
+          rowIndex: lot.rowIndex,
+          newUnits: newUnits,
+          oldUnits: lotUnits
+        };
+        payloads.push([etfCode, cleanBuyDate, lot.buyPrice, unitsDeducted, today, sellPrice]);
+      }
+    }
+
+    // 8. Find first empty row after row 3 in 'Idle Money - Sold' and write payloads as raw values
+    var destStartRow = getFirstEmptyRowAfterRow3(soldSheet);
+    var requiredRows = (destStartRow + payloads.length - 1) - soldSheet.getMaxRows();
+    if (requiredRows > 0) {
+      soldSheet.insertRowsAfter(soldSheet.getMaxRows(), requiredRows);
+    }
+    soldSheet.getRange(destStartRow, 1, payloads.length, 6).setValues(payloads);
+
+    // 9. Update 'Idle Money - Holdings' table:
+    // Update partially sold row first (only Column D is modified)
+    if (rowToModify) {
+      sheet.getRange(rowToModify.rowIndex, 4).setValue(rowToModify.newUnits);
+    }
+
+    // Delete fully sold rows descending from bottom to top so row indices don't shift
+    if (rowsToDelete.length > 0) {
+      rowsToDelete.sort(function(a, b) { return b - a; });
+      for (var d = 0; d < rowsToDelete.length; d++) {
+        sheet.deleteRow(rowsToDelete[d]);
+      }
+    }
+
+    // 10. Clear E2 and F2, remove H2 checkbox and ensure I2 is cleared
+    sheet.getRange('E2:F2').clearContent();
+    h2Range.clearContent();
+    h2Range.clearDataValidations();
+    sheet.getRange('I2').clearContent().clearDataValidations();
+
+    ss.toast(
+      'Sold ' + soldUnits + ' units of ' + etfCode + ' recorded in ' + IDLE_MONEY_SOLD_TAB_NAME + ' across ' + payloads.length + ' lot(s).',
+      'Idle Money - Sale Recorded ✓',
+      6
+    );
+
+  } catch (err) {
+    console.error('Error in processIdleMoneySale:', err);
+    ss.toast('Error processing sale: ' + err.message, 'Idle Money - Error', 6);
+    h2Range.setValue(false);
+  }
+}
+
+/**
+ * Menu trigger wrappers
+ */
+function manualTriggerIdleMoneySale() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(IDLE_MONEY_HOLDINGS_TAB_NAME);
+  if (!sheet) {
+    ss.toast("Sheet '" + IDLE_MONEY_HOLDINGS_TAB_NAME + "' not found.", 'Error', 4);
+    return;
+  }
+  processIdleMoneySale(sheet);
 }
