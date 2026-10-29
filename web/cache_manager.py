@@ -133,8 +133,8 @@ def ensure_symbol_data(symbol: str, start_date: str, end_date: str, db_path: str
     else:
         cached_min = cached_df["Date"].min()
         cached_max = cached_df["Date"].max()
-        # If cache starts more than 10 calendar days after requested start, or ends > 5 days before requested end
-        if (cached_min - req_start).days > 10 or (req_end - cached_max).days > 5:
+        # If cache starts more than 10 calendar days after requested start, or ends before requested end
+        if (cached_min - req_start).days > 10 or cached_max < req_end:
             needs_download = True
             
     if needs_download:
