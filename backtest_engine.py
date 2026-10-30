@@ -341,6 +341,10 @@ def run_backtest(
         day_low = float(day["Low"])
         day_close = float(day["Close"])
 
+        # Track slots sold today to strictly prohibit selling and buying on the same day
+        slots_sold_today: Set[int] = set()
+        sell_occurred_today: bool = False
+
         # Track max concurrent active tranches
         if len(active_tranches) > max_slots_used:
             max_slots_used = len(active_tranches)
@@ -422,6 +426,8 @@ def run_backtest(
                     
                     del active_tranches[slot_id]
                     available_slots.add(slot_id)
+                    slots_sold_today.add(slot_id)
+                    sell_occurred_today = True
 
         # -----------------------------------------------------------------
         # STEP 1B: Magic Profit Check on Open Tranches in Loss (Added ONCE for all open tranches)
@@ -474,8 +480,9 @@ def run_backtest(
             if (curr_yr, curr_wk) > (pending_order.target_year, pending_order.target_week):
                 pending_order = None
             elif (curr_yr, curr_wk) == (pending_order.target_year, pending_order.target_week):
-                # We are in the execution week: check if low <= ceiling and a slot is free
-                if day_date >= start_dt_cutoff and len(active_tranches) < config.num_parts and len(available_slots) > 0:
+                # We are in the execution week: check if low <= ceiling and a slot is free (and no sell today)
+                available_for_entry = [s for s in available_slots if s not in slots_sold_today]
+                if day_date >= start_dt_cutoff and len(active_tranches) < config.num_parts and len(available_for_entry) > 0 and not sell_occurred_today:
                     if day_low <= pending_order.ceiling:
                         candidate_buy_price = round(min(day_open, pending_order.ceiling), 2)
                         
@@ -498,7 +505,7 @@ def run_backtest(
 
                         if allow_entry:
                             buy_price = candidate_buy_price
-                            slot_id = min(available_slots)
+                            slot_id = min(available_for_entry)
                             available_slots.remove(slot_id)
                             
                             # Dynamic compounding tranche capital
@@ -563,6 +570,8 @@ def run_backtest(
                             
                             del active_tranches[slot_id]
                             available_slots.add(slot_id)
+                            slots_sold_today.add(slot_id)
+                            sell_occurred_today = True
 
             # Action 3B: 20-Week Low Tracking + Bullish Momentum Combo Execution
             if (config.use_20w_low_tracking or config.enable_bullish_combo) and w_row is not None:
@@ -599,6 +608,8 @@ def run_backtest(
 
                                 del active_tranches[slot_id]
                                 available_slots.add(slot_id)
+                                slots_sold_today.add(slot_id)
+                                sell_occurred_today = True
 
                 # 2. Bearish Activation: Stock closes below rolling 20-week low
                 if not is_tracking_20w:
@@ -613,8 +624,9 @@ def run_backtest(
                     # Enter dedicated Bullish tranche if enabled and none currently open
                     if config.enable_bullish_combo and day_date >= start_dt_cutoff:
                         has_open_bullish = any(t.tranche_type == "BULLISH" for t in active_tranches.values())
-                        if not has_open_bullish and len(active_tranches) < config.num_parts and len(available_slots) > 0:
-                            slot_id = min(available_slots)
+                        available_for_bullish = [s for s in available_slots if s not in slots_sold_today]
+                        if not has_open_bullish and len(active_tranches) < config.num_parts and len(available_for_bullish) > 0 and not sell_occurred_today:
+                            slot_id = min(available_for_bullish)
                             available_slots.remove(slot_id)
 
                             buy_price = round(day_close, 2)
@@ -660,41 +672,58 @@ def run_backtest(
                     prev_wk_h = float(w_row.get("prev_week_high", float("inf")))
                     if day_close > prev_wk_h and open_bearish < max_bearish:
                         if day_date >= start_dt_cutoff and len(active_tranches) < config.num_parts and len(available_slots) > 0:
-                            slot_id = min(available_slots)
-                            available_slots.remove(slot_id)
+                            if not sell_occurred_today:
+                                slot_id = min(available_slots)
+                                available_slots.remove(slot_id)
 
-                            buy_price = round(day_close, 2)
-                            if getattr(config, "enable_compounding", True):
-                                current_capital = config.total_capital + cumulative_realized_profit + total_magic_profit_accum + total_dividend_accum
-                                dyn_tranche_capital = current_capital / float(config.num_parts)
+                                buy_price = round(day_close, 2)
+                                if getattr(config, "enable_compounding", True):
+                                    current_capital = config.total_capital + cumulative_realized_profit + total_magic_profit_accum + total_dividend_accum
+                                    dyn_tranche_capital = current_capital / float(config.num_parts)
+                                else:
+                                    dyn_tranche_capital = config.tranche_capital
+
+                                shares = int(dyn_tranche_capital // buy_price)
+                                if shares > 0:
+                                    trade_counter += 1
+                                    invested = round(shares * buy_price, 2)
+                                    target_price = round(buy_price * (1.0 + config.target_pct), 2)
+
+                                    new_tranche = Tranche(
+                                        trade_id=trade_counter,
+                                        slot_id=slot_id,
+                                        symbol=symbol,
+                                        signal_date=day_date,
+                                        buy_date=day_date,
+                                        buy_price=buy_price,
+                                        shares=shares,
+                                        invested_amt=invested,
+                                        target_price=target_price,
+                                        status="OPEN",
+                                        tranche_type="BEARISH"
+                                    )
+                                    active_tranches[slot_id] = new_tranche
+                                    all_trades.append(new_tranche)
+                                    available_cash -= invested
+
+                                    if len(active_tranches) > max_slots_used:
+                                        max_slots_used = len(active_tranches)
                             else:
-                                dyn_tranche_capital = config.tranche_capital
-
-                            shares = int(dyn_tranche_capital // buy_price)
-                            if shares > 0:
-                                trade_counter += 1
-                                invested = round(shares * buy_price, 2)
-                                target_price = round(buy_price * (1.0 + config.target_pct), 2)
-
-                                new_tranche = Tranche(
-                                    trade_id=trade_counter,
-                                    slot_id=slot_id,
-                                    symbol=symbol,
-                                    signal_date=day_date,
-                                    buy_date=day_date,
-                                    buy_price=buy_price,
-                                    shares=shares,
-                                    invested_amt=invested,
-                                    target_price=target_price,
-                                    status="OPEN",
-                                    tranche_type="BEARISH"
-                                )
-                                active_tranches[slot_id] = new_tranche
-                                all_trades.append(new_tranche)
-                                available_cash -= invested
-
-                                if len(active_tranches) > max_slots_used:
-                                    max_slots_used = len(active_tranches)
+                                # A sell took place today on Friday.
+                                # Can't sell and buy on same day, so queue pending order for NEXT WEEK to buy when price comes!
+                                try:
+                                    curr_pos = weekly_keys_list.index(curr_week_key)
+                                    if curr_pos + 1 < len(weekly_keys_list):
+                                        next_yr, next_wk = weekly_keys_list[curr_pos + 1]
+                                        pending_order = PendingOrder(
+                                            signal_date=day_date,
+                                            ceiling=round(day_close * (1.0 + config.entry_buffer_pct), 2),
+                                            ref_close=round(day_close, 2),
+                                            target_year=next_yr,
+                                            target_week=next_wk
+                                        )
+                                except ValueError:
+                                    pass
 
             # Action 3C: Standard Breakout Signal Check for Next Week (Base and variants)
             elif not config.use_20w_low_tracking and w_row is not None and bool(w_row.get("breakout_signal", False)):

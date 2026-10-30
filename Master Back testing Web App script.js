@@ -270,6 +270,8 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
   let availableSlots = [];
   for (let s = 1; s <= numParts; s++) availableSlots.push(s);
 
+  let pendingOrder = null;
+
   let allTrades = [];
   let tradeCounter = 0;
   let cumulativeRealizedProfit = 0.0;
@@ -296,6 +298,10 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
 
     let dayTradeRealized = 0.0;
     let dayDividend = 0.0;
+
+    // Track slots sold today to strictly prohibit selling and buying on the same day
+    const slotsSoldToday = new Set();
+    let sellOccurredToday = false;
 
     // STEP 0: Dividends on Open Tranches (T-2 Rule)
     const dayDateStr = Utilities.formatDate(dayDate, "Asia/Kolkata", "yyyy-MM-dd");
@@ -362,78 +368,70 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
           delete activeTranches[slotId];
           availableSlots.push(Number(slotId));
           availableSlots.sort((a, b) => a - b);
+          slotsSoldToday.add(Number(slotId));
+          sellOccurredToday = true;
         }
       }
     });
 
     // STEP 2: Pending Buy Order Evaluation
-    if (dayDate >= startDate && wBar && wBar.breakoutSignal && availableSlots.length > 0) {
-      const isFridayOrLastDay = (weekLastDays[weekKey] && dayDate.getTime() === weekLastDays[weekKey].getTime());
-      if (isFridayOrLastDay && dayClose > wBar.prevWeekHigh) {
-        // Pending order queued
-      }
-    }
+    if (pendingOrder !== null) {
+      if ((day.isoYear > pendingOrder.targetYear) || (day.isoYear === pendingOrder.targetYear && day.isoWeek > pendingOrder.targetWeek)) {
+        pendingOrder = null;
+      } else if (day.isoYear === pendingOrder.targetYear && day.isoWeek === pendingOrder.targetWeek) {
+        const availableForEntry = availableSlots.filter(s => !slotsSoldToday.has(s));
+        if (dayDate >= startDate && Object.keys(activeTranches).length < numParts && availableForEntry.length > 0 && !sellOccurredToday) {
+          if (dayLow <= pendingOrder.ceiling) {
+            const buyPrice = Math.round(Math.min(dayOpen, pendingOrder.ceiling) * 100) / 100;
+            const slotId = availableForEntry[0];
+            availableSlots = availableSlots.filter(s => s !== slotId);
 
-    if (dayDate >= startDate && availableSlots.length > 0) {
-      const prevWeekDate = new Date(dayDate.getTime() - (7 * 86400000));
-      const prevIso = getIsoYearWeek(prevWeekDate);
-      const prevWBar = weeklyLookup[`${prevIso.year}-${prevIso.week}`];
+            const currentTrancheCapital = (totalCapital + cumulativeRealizedProfit + totalDividendAccum) / numParts;
+            const shares = Math.floor(currentTrancheCapital / buyPrice);
 
-      if (prevWBar && prevWBar.breakoutSignal) {
-        const ceiling = Math.round(prevWBar.referenceClose * 1.005 * 100) / 100;
-        if (dayLow <= ceiling) {
-          const buyPrice = Math.min(dayOpen, ceiling);
-          const currentTrancheCapital = (totalCapital + cumulativeRealizedProfit) / numParts;
-          const shares = Math.floor(currentTrancheCapital / buyPrice);
+            if (shares > 0) {
+              tradeCounter++;
+              const investedAmt = Math.round(shares * buyPrice * 100) / 100;
+              const targetPrice = Math.round(buyPrice * (1 + targetPct) * 100) / 100;
 
-          if (shares > 0) {
-            const slotId = availableSlots.shift();
-            tradeCounter++;
-            const investedAmt = Math.round(shares * buyPrice * 100) / 100;
-            const trancheType = isTracking20w ? 'BULLISH' : 'BEARISH';
-            const targetPrice = (trancheType === 'BEARISH') ? Math.round(buyPrice * (1 + targetPct) * 100) / 100 : 0.0;
+              const newTranche = {
+                tradeId: tradeCounter,
+                slotId: slotId,
+                symbol: cleanSym,
+                signalDate: pendingOrder.signalDate,
+                buyDate: dayDate,
+                buyPrice: buyPrice,
+                shares: shares,
+                investedAmt: investedAmt,
+                targetPrice: targetPrice,
+                sellDate: null,
+                sellPrice: null,
+                realizedPnl: null,
+                returnPct: null,
+                holdingDays: null,
+                status: 'OPEN',
+                trancheType: 'BEARISH',
+                dividendTotal: 0.0,
+                requiredReturnPct: null,
+                achievedReturnPct: null,
+                yearsHeld: null
+              };
 
-            const newTranche = {
-              tradeId: tradeCounter,
-              slotId: slotId,
-              symbol: cleanSym,
-              buyDate: dayDate,
-              buyPrice: buyPrice,
-              shares: shares,
-              investedAmt: investedAmt,
-              targetPrice: targetPrice,
-              sellDate: null,
-              sellPrice: null,
-              realizedPnl: null,
-              returnPct: null,
-              holdingDays: null,
-              status: 'OPEN',
-              trancheType: trancheType,
-              dividendTotal: 0.0,
-              requiredReturnPct: (trancheType === 'BULLISH') ? bullishMinReturnPct : null,
-              achievedReturnPct: null,
-              yearsHeld: null
-            };
-
-            activeTranches[slotId] = newTranche;
-            allTrades.push(newTranche);
-            availableCash -= investedAmt;
+              activeTranches[slotId] = newTranche;
+              allTrades.push(newTranche);
+              availableCash -= investedAmt;
+            }
+            pendingOrder = null;
           }
         }
       }
     }
 
-    // STEP 3: Weekly Trailing Exits for Bullish Tranches
+    // STEP 3: Weekly Trailing Exits and Signals
     const isWeekEnd = (weekLastDays[weekKey] && dayDate.getTime() === weekLastDays[weekKey].getTime());
     if (isWeekEnd && wBar) {
-      if (!isTracking20w && wBar.rolling20wLow !== null && dayClose < wBar.rolling20wLow) {
-        isTracking20w = true;
-      }
-      if (isTracking20w && wBar.rolling20wHigh !== null && dayClose > wBar.rolling20wHigh) {
-        isTracking20w = false;
-      }
-
-      if (isTracking20w && wBar.rolling20wLow !== null && dayClose < wBar.rolling20wLow) {
+      // 1. Bullish Tranche Exits
+      if (wBar.rolling20wLow !== null && dayClose < wBar.rolling20wLow) {
         Object.keys(activeTranches).forEach(slotId => {
           const tranche = activeTranches[slotId];
           if (tranche.trancheType === 'BULLISH') {
@@ -459,9 +457,118 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
               delete activeTranches[slotId];
               availableSlots.push(Number(slotId));
               availableSlots.sort((a, b) => a - b);
+              slotsSoldToday.add(Number(slotId));
+              sellOccurredToday = true;
             }
           }
         });
+      }
+
+      // 2. Bearish Activation
+      if (!isTracking20w && wBar.rolling20wLow !== null && dayClose < wBar.rolling20wLow) {
+        isTracking20w = true;
+      }
+
+      // 3. 20-Week High Breakout
+      if (wBar.rolling20wHigh !== null && dayClose > wBar.rolling20wHigh) {
+        isTracking20w = false;
+        const hasOpenBullish = Object.values(activeTranches).some(t => t.trancheType === 'BULLISH');
+        const availableForBullish = availableSlots.filter(s => !slotsSoldToday.has(s));
+        if (dayDate >= startDate && !hasOpenBullish && Object.keys(activeTranches).length < numParts && availableForBullish.length > 0 && !sellOccurredToday) {
+          const slotId = availableForBullish[0];
+          availableSlots = availableSlots.filter(s => s !== slotId);
+          const buyPrice = Math.round(dayClose * 100) / 100;
+          const currentTrancheCapital = (totalCapital + cumulativeRealizedProfit + totalDividendAccum) / numParts;
+          const shares = Math.floor(currentTrancheCapital / buyPrice);
+
+          if (shares > 0) {
+            tradeCounter++;
+            const investedAmt = Math.round(shares * buyPrice * 100) / 100;
+            const newTranche = {
+              tradeId: tradeCounter,
+              slotId: slotId,
+              symbol: cleanSym,
+              signalDate: dayDate,
+              buyDate: dayDate,
+              buyPrice: buyPrice,
+              shares: shares,
+              investedAmt: investedAmt,
+              targetPrice: 0.0,
+              sellDate: null,
+              sellPrice: null,
+              realizedPnl: null,
+              returnPct: null,
+              holdingDays: null,
+              status: 'OPEN',
+              trancheType: 'BULLISH',
+              dividendTotal: 0.0,
+              requiredReturnPct: bullishMinReturnPct,
+              achievedReturnPct: null,
+              yearsHeld: null
+            };
+            activeTranches[slotId] = newTranche;
+            allTrades.push(newTranche);
+            availableCash -= investedAmt;
+          }
+        }
+      } else if (isTracking20w) {
+        // 4. Bearish Dip-Buying Tranches
+        const maxBearish = numParts - 1;
+        const openBearish = Object.values(activeTranches).filter(t => t.trancheType === 'BEARISH').length;
+        if (dayClose > wBar.prevWeekHigh && openBearish < maxBearish) {
+          if (dayDate >= startDate && Object.keys(activeTranches).length < numParts && availableSlots.length > 0) {
+            if (!sellOccurredToday) {
+              const slotId = availableSlots.shift();
+              const buyPrice = Math.round(dayClose * 100) / 100;
+              const currentTrancheCapital = (totalCapital + cumulativeRealizedProfit + totalDividendAccum) / numParts;
+              const shares = Math.floor(currentTrancheCapital / buyPrice);
+
+              if (shares > 0) {
+                tradeCounter++;
+                const investedAmt = Math.round(shares * buyPrice * 100) / 100;
+                const targetPrice = Math.round(buyPrice * (1 + targetPct) * 100) / 100;
+
+                const newTranche = {
+                  tradeId: tradeCounter,
+                  slotId: slotId,
+                  symbol: cleanSym,
+                  signalDate: dayDate,
+                  buyDate: dayDate,
+                  buyPrice: buyPrice,
+                  shares: shares,
+                  investedAmt: investedAmt,
+                  targetPrice: targetPrice,
+                  sellDate: null,
+                  sellPrice: null,
+                  realizedPnl: null,
+                  returnPct: null,
+                  holdingDays: null,
+                  status: 'OPEN',
+                  trancheType: 'BEARISH',
+                  dividendTotal: 0.0,
+                  requiredReturnPct: null,
+                  achievedReturnPct: null,
+                  yearsHeld: null
+                };
+                activeTranches[slotId] = newTranche;
+                allTrades.push(newTranche);
+                availableCash -= investedAmt;
+              }
+            } else {
+              // A sell took place today on Friday.
+              // Can't sell and buy on same day, so queue pending order for NEXT WEEK to buy when price comes!
+              const nextWeekDate = new Date(dayDate.getTime() + (3 * 86400000));
+              const nextIso = getIsoYearWeek(nextWeekDate);
+              pendingOrder = {
+                signalDate: dayDate,
+                ceiling: Math.round(dayClose * 1.005 * 100) / 100,
+                refClose: Math.round(dayClose * 100) / 100,
+                targetYear: nextIso.year,
+                targetWeek: nextIso.week
+              };
+            }
+          }
+        }
       }
     }
 
