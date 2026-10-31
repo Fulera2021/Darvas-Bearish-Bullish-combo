@@ -171,6 +171,40 @@ function applyScannerFormattingRulesMenu() {
  * 
  * @param {boolean} [forceGoogleFinance=false] Set true to force execution via GoogleFinance backup engine.
  */
+/**
+ * Web App Endpoint: Receives scan requests from external public sheets
+ */
+function doPost(e) {
+  try {
+    const params = JSON.parse(e.postData.contents);
+    const tickers = params.tickers || [];
+    const gttTickers = params.gttTickers || [];
+    const forceGoogleFinance = Boolean(params.forceGoogleFinance);
+
+    if (!tickers || tickers.length === 0) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        error: "No stock tickers found in request payload."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const scanResult = scanTickersCore(tickers, gttTickers, forceGoogleFinance);
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      data: scanResult
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Main Scanner Execution Function (Local Master Sheet runner)
+ */
 function runDarvasScanner(forceGoogleFinance = false) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
@@ -179,8 +213,6 @@ function runDarvasScanner(forceGoogleFinance = false) {
     SpreadsheetApp.getUi().alert(`Error: Sheet tab named '${CONFIG.SHEET_NAME}' was not found. Please create it or verify the name.`);
     return;
   }
-
-  const startTime = new Date().getTime();
 
   // 1. Read input tickers from Column A (Row 7 downwards)
   const lastInputRow = sheet.getLastRow();
@@ -205,6 +237,57 @@ function runDarvasScanner(forceGoogleFinance = false) {
     return;
   }
 
+  // Filter out stocks already present in GTT Tracker
+  const gttSheetForFilter = ss.getSheetByName(GTT_CONFIG.SHEET_NAME);
+  let gttTickers = [];
+  if (gttSheetForFilter) {
+    const gttLastRow = gttSheetForFilter.getLastRow();
+    if (gttLastRow >= GTT_CONFIG.DATA_START_ROW) {
+      gttTickers = gttSheetForFilter
+        .getRange(GTT_CONFIG.DATA_START_ROW, GTT_CONFIG.TICKER_COL, gttLastRow - GTT_CONFIG.DATA_START_ROW + 1, 1)
+        .getValues()
+        .map(r => String(r[0]).trim().toUpperCase())
+        .filter(t => t !== '');
+    }
+  }
+
+  const result = scanTickersCore(rawTickers, gttTickers, forceGoogleFinance, ss.toast.bind(ss));
+  const outputRows = result.outputRows;
+  const processedData = result.processedData;
+  const summary = result.summary;
+
+  // Ensure formulas in Row 6
+  ensureRow6Formulas(sheet);
+
+  // Clear any old data in J7:Q from previous runs
+  const numOutputRows = outputRows.length;
+  const numOutputCols = CONFIG.OUTPUT_NUM_COLS;
+  const currentMaxRow = Math.max(sheet.getLastRow(), CONFIG.OUTPUT_START_ROW + numOutputRows + 10);
+  if (currentMaxRow >= CONFIG.OUTPUT_START_ROW) {
+    const clearNumRows = currentMaxRow - CONFIG.OUTPUT_START_ROW + 1;
+    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.OUTPUT_START_COL, clearNumRows, numOutputCols).clearContent();
+    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.GTT_SELECT_COL, clearNumRows, 1).clearContent().clearDataValidations().setBackground(null);
+    sheet.getRange(CONFIG.OUTPUT_START_ROW, 18, clearNumRows, 1).clearContent().clearDataValidations();
+  }
+
+  // Write new values
+  if (numOutputRows > 0) {
+    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.OUTPUT_START_COL, numOutputRows, numOutputCols).setValues(outputRows);
+    formatScannerDataRange(sheet, CONFIG.OUTPUT_START_ROW, numOutputRows);
+    applyScannerFormattingRules(sheet);
+    updateScannerSummaryHeader(sheet, summary.bullishCount, summary.bearishCount);
+    populateGttCheckboxes(sheet, CONFIG.OUTPUT_START_ROW, numOutputRows, processedData);
+  }
+
+  ss.toast(`Scan complete in ${summary.durationSec}s! Found ${summary.bullishCount} Bullish, ${summary.bearishCount} Bearish buys, ${summary.trackingCount} Tracking, and ${summary.runningCount} Bullish Running.`, '⚡ Scan Finished', 8);
+}
+
+/**
+ * Core Scanner Engine: Parallel batch fetching, indicator calculation, and state tracking.
+ * Pure logic decoupled from spreadsheet UI, accessible locally or remotely via doPost.
+ */
+function scanTickersCore(rawTickers, gttTickers = [], forceGoogleFinance = false, toastFn = null) {
+  const startTime = new Date().getTime();
   const processedMap = {};
   const missingTickers = [];
 
@@ -233,10 +316,12 @@ function runDarvasScanner(forceGoogleFinance = false) {
     const endIdx = Math.min(startIdx + YF_BATCH_SIZE, rawTickers.length);
     const batchTickers = rawTickers.slice(startIdx, endIdx);
 
-    if (totalBatches > 1) {
-      ss.toast(`Analyzing stocks ${startIdx + 1}–${endIdx} of ${rawTickers.length} (${engineLabel} Batch ${b + 1}/${totalBatches})...`, 'Darvas Scanner', 10);
-    } else {
-      ss.toast(`Analyzing ${rawTickers.length} stocks via ${engineLabel}...`, 'Darvas Scanner', 10);
+    if (toastFn) {
+      if (totalBatches > 1) {
+        toastFn(`Analyzing stocks ${startIdx + 1}–${endIdx} of ${rawTickers.length} (${engineLabel} Batch ${b + 1}/${totalBatches})...`, 'Darvas Scanner', 10);
+      } else {
+        toastFn(`Analyzing ${rawTickers.length} stocks via ${engineLabel}...`, 'Darvas Scanner', 10);
+      }
     }
 
     const requests = batchTickers.map(t => {
@@ -319,21 +404,20 @@ function runDarvasScanner(forceGoogleFinance = false) {
   // 4b. Secondary Fallback: Fetch missing / failed stocks via GoogleFinance native engine
   const uniqueMissingTickers = Array.from(new Set(missingTickers));
   if (uniqueMissingTickers.length > 0) {
-    const reasonMsg = forceGoogleFinance
-      ? `Fetching ${uniqueMissingTickers.length} stock(s) via GoogleFinance...`
-      : `Yahoo Finance unavailable for ${uniqueMissingTickers.length} stock(s). Using GoogleFinance fallback...`;
-    ss.toast(reasonMsg, '⚡ GoogleFinance Fallback', 10);
     try {
-      const gfBarsMap = fetchBarsFromGoogleFinance(ss, uniqueMissingTickers);
-      uniqueMissingTickers.forEach(ticker => {
-        const bars = gfBarsMap[ticker];
-        if (bars && bars.length >= 25) {
-          const analysis = analyzeStockFromBars(ticker, bars);
-          if (analysis) {
-            processedMap[ticker] = analysis;
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      if (ss) {
+        const gfBarsMap = fetchBarsFromGoogleFinance(ss, uniqueMissingTickers);
+        uniqueMissingTickers.forEach(ticker => {
+          const bars = gfBarsMap[ticker];
+          if (bars && bars.length >= 25) {
+            const analysis = analyzeStockFromBars(ticker, bars);
+            if (analysis) {
+              processedMap[ticker] = analysis;
+            }
           }
-        }
-      });
+        });
+      }
     } catch (gfErr) {
       Logger.log('GoogleFinance fallback error: ' + gfErr);
     }
@@ -377,38 +461,13 @@ function runDarvasScanner(forceGoogleFinance = false) {
     return a.ticker.localeCompare(b.ticker);
   });
 
-  // 5b. Filter out stocks already present in GTT Tracker (they have been queued for GTT order)
-  const ss2 = SpreadsheetApp.getActiveSpreadsheet();
-  const gttSheetForFilter = ss2.getSheetByName(GTT_CONFIG.SHEET_NAME);
-  if (gttSheetForFilter) {
-    const gttLastRow = gttSheetForFilter.getLastRow();
-    if (gttLastRow >= GTT_CONFIG.DATA_START_ROW) {
-      const gttTickers = gttSheetForFilter
-        .getRange(GTT_CONFIG.DATA_START_ROW, GTT_CONFIG.TICKER_COL, gttLastRow - GTT_CONFIG.DATA_START_ROW + 1, 1)
-        .getValues()
-        .map(r => String(r[0]).trim().toUpperCase())
-        .filter(t => t !== '');
-      if (gttTickers.length > 0) {
-        const gttSet = new Set(gttTickers);
-        processedData = processedData.filter(item => !gttSet.has(String(item.ticker).trim().toUpperCase()));
-      }
-    }
+  // 5b. Filter out stocks already present in GTT Tracker
+  if (gttTickers && gttTickers.length > 0) {
+    const gttSet = new Set(gttTickers.map(t => String(t).trim().toUpperCase()));
+    processedData = processedData.filter(item => !gttSet.has(String(item.ticker).trim().toUpperCase()));
   }
 
-  // 6. Ensure formulas in Row 6 are set correctly (Col K is Close, so N6 uses K6:K)
-  ensureRow6Formulas(sheet);
-
-  // 7. Prepare batch values to write to sheet (Columns J to Q)
-  // Columns:
-  // Col J: Stock Code
-  // Col K: Status
-  // Col L: Previous Week High  (High of LAST TO LAST WEEK, W_{t-1})
-  // Col M: Last Week's Close   (Friday Close of LAST COMPLETED WEEK, W_t)
-  // Col N: Breakout % (Rise)   [(Close_M - High_L) / High_L]
-  // Col O: Buy Limit Ceiling (+0.5%) -> Handled by O6 Formula: CEILING(M6:M*1.005, 0.05)
-  // Col P: CMP -> Handled by P6 Formula: GOOGLEFINANCE(ticker, "price")
-  // Col Q: 20W Low Breakdown Signal -> Shows '20W Low Breakdown' if 20W low touched in last completed week, else Blank
-
+  // 6. Prepare batch values to write to sheet (Columns J to Q)
   const outputRows = processedData.map(item => {
     return [
       item.ticker,                                                  // Col J: Stock Code
@@ -422,31 +481,6 @@ function runDarvasScanner(forceGoogleFinance = false) {
     ];
   });
 
-  // 8. Write to Sheet (Columns J through Q)
-  const numOutputRows = outputRows.length;
-  const numOutputCols = CONFIG.OUTPUT_NUM_COLS; // 8 columns (J to Q)
-
-  // Clear any old data in J7:Q from previous runs (including old GTT checkboxes in Col I and old Col R)
-  const currentMaxRow = Math.max(sheet.getLastRow(), CONFIG.OUTPUT_START_ROW + numOutputRows + 10);
-  if (currentMaxRow >= CONFIG.OUTPUT_START_ROW) {
-    const clearNumRows = currentMaxRow - CONFIG.OUTPUT_START_ROW + 1;
-    // Clear J:Q (output data)
-    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.OUTPUT_START_COL, clearNumRows, numOutputCols).clearContent();
-    // Clear I (GTT checkboxes)
-    sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.GTT_SELECT_COL, clearNumRows, 1).clearContent().clearDataValidations().setBackground(null);
-    // Also clear old Col R (old GTT checkboxes if any remained from old layout)
-    sheet.getRange(CONFIG.OUTPUT_START_ROW, 18, clearNumRows, 1).clearContent().clearDataValidations();
-  }
-
-  // Set new values
-  sheet.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.OUTPUT_START_COL, numOutputRows, numOutputCols).setValues(outputRows);
-
-  // 9. Format columns with proper numbers and percentages
-  formatScannerDataRange(sheet, CONFIG.OUTPUT_START_ROW, numOutputRows);
-
-  // 10. Automatically apply conditional formatting rules
-  applyScannerFormattingRules(sheet);
-
   const durationSec = ((new Date().getTime() - startTime) / 1000).toFixed(1);
   const bullishCount = processedData.filter(d => d.sortGroup === 1).length;
   const bearishCount = processedData.filter(d => d.sortGroup === 2).length;
@@ -454,13 +488,18 @@ function runDarvasScanner(forceGoogleFinance = false) {
   const runningCount = processedData.filter(d => d.sortGroup === 4).length;
   const breakdownCount = processedData.filter(d => d.colO_breakdown !== '').length;
 
-  // 11. Populate executive summary KPI cards (Rows 1-2 from Col H onwards)
-  updateScannerSummaryHeader(sheet, bullishCount, bearishCount);
-
-  // 12. Populate GTT Select checkboxes in Col R for buy-eligible stocks
-  populateGttCheckboxes(sheet, CONFIG.OUTPUT_START_ROW, numOutputRows, processedData);
-
-  ss.toast(`Scan complete in ${durationSec}s! Found ${bullishCount} Bullish, ${bearishCount} Bearish buys, ${trackingCount} Tracking, and ${runningCount} Bullish Running.`, '⚡ Scan Finished', 8);
+  return {
+    outputRows: outputRows,
+    processedData: processedData,
+    summary: {
+      bullishCount: bullishCount,
+      bearishCount: bearishCount,
+      trackingCount: trackingCount,
+      runningCount: runningCount,
+      breakdownCount: breakdownCount,
+      durationSec: durationSec
+    }
+  };
 }
 
 // ============================================================================
@@ -902,8 +941,6 @@ function refreshGttCheckboxes(gttSheet) {
     .getRange(GTT_CONFIG.DATA_START_ROW, GTT_CONFIG.TICKER_COL, numRows, 1)
     .getValues();
 
-  const checkboxRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-
   // Clear existing checkboxes and styles in Col J and Col L for the range
   gttSheet.getRange(GTT_CONFIG.DATA_START_ROW, GTT_CONFIG.DELETE_CHK_COL, numRows, 1)
     .clearContent()
@@ -926,15 +963,17 @@ function refreshGttCheckboxes(gttSheet) {
 
       // Col J: Delete Checkbox (soft red)
       gttSheet.getRange(row, GTT_CONFIG.DELETE_CHK_COL)
-        .setDataValidation(checkboxRule)
-        .setValue(false)
+        .setNumberFormat('General')
+        .insertCheckboxes()
+        .uncheck()
         .setBackground('#FEF2F2')
         .setHorizontalAlignment('center');
 
       // Col L: Transfer Checkbox (soft green)
       gttSheet.getRange(row, GTT_CONFIG.TRANSFER_CHK_COL)
-        .setDataValidation(checkboxRule)
-        .setValue(false)
+        .setNumberFormat('General')
+        .insertCheckboxes()
+        .uncheck()
         .setBackground('#F0FDF4')
         .setHorizontalAlignment('center');
     } else {
@@ -966,13 +1005,10 @@ function refreshGttDeleteCheckboxes(gttSheet) {
 function setupGttMasterDeleteCheckbox(gttSheet) {
   if (!gttSheet) return;
   const j1Cell = gttSheet.getRange(GTT_CONFIG.MASTER_DELETE_ROW, GTT_CONFIG.DELETE_CHK_COL); // J1
-  const rule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-  j1Cell.setDataValidation(rule);
-  const val = j1Cell.getValue();
-  if (val !== true && val !== false) {
-    j1Cell.setValue(false);
-  }
-  j1Cell.setHorizontalAlignment('center')
+  j1Cell.setNumberFormat('General')
+    .insertCheckboxes()
+    .uncheck()
+    .setHorizontalAlignment('center')
     .setVerticalAlignment('middle')
     .setNote('☑ Check to delete all GTTs in sheet (clear content of B4:L)');
 }
@@ -2017,6 +2053,12 @@ function showAboutDialog() {
  */
 function convertToYfTicker(ticker) {
   let clean = String(ticker).trim().toUpperCase();
+  for (const p of ['NASDAQ:', 'NYSE:', 'AMEX:', 'US:']) {
+    if (clean.startsWith(p)) return clean.substring(p.length).trim();
+  }
+  if (clean.endsWith('.US')) {
+    return clean.replace(/\.US$/i, '');
+  }
   if (clean.startsWith('NSE:')) {
     clean = clean.substring(4).trim() + '.NS';
   } else if (clean.startsWith('BSE:')) {
