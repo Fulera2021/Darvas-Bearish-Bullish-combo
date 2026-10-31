@@ -1205,33 +1205,26 @@ function resolveTicker(tickerRaw) {
     return { cleanSym: sym, yfTicker: sym, isExplicitUS: true, isExplicitNSE: false };
   }
 
-  // 5. BSE / BOM prefix: BOM:500209, BSE:500325
-  const bseMatch = s.match(/^(BSE|BOM):\s*([A-Z0-9.\-]+)$/i);
-  if (bseMatch) {
-    const sym = bseMatch[2].trim().toUpperCase();
-    return { cleanSym: sym, yfTicker: sym.endsWith('.BO') ? sym : `${sym}.BO`, isExplicitUS: false, isExplicitNSE: false };
-  }
-
-  // 6. NSE prefix: NSE:SBIN
-  const nseMatch = s.match(/^NSE:\s*([A-Z0-9.\-]+)$/i);
-  if (nseMatch) {
-    const sym = nseMatch[1].trim().toUpperCase();
+  // 5. Indian Stocks: NSE prefix or legacy BSE / BOM prefix routed directly to NSE (.NS)
+  const indMatch = s.match(/^(NSE|BSE|BOM):\s*([A-Z0-9.\-]+)$/i);
+  if (indMatch) {
+    const sym = indMatch[2].trim().toUpperCase();
     return { cleanSym: sym, yfTicker: sym.endsWith('.NS') ? sym : `${sym}.NS`, isExplicitUS: false, isExplicitNSE: true };
   }
 
-  // 7. US suffix e.g. AAPL.US
+  // 6. US suffix e.g. AAPL.US
   if (s.endsWith('.US')) {
     const sym = s.replace(/\.US$/i, '');
     return { cleanSym: sym, yfTicker: sym, isExplicitUS: true, isExplicitNSE: false };
   }
 
-  // 8. Already has extension e.g. .NS, .BO, .L, .TO, .DE or ^
-  if (s.endsWith('.NS') || s.endsWith('.BO') || s.endsWith('.L') || s.endsWith('.TO') || s.endsWith('.DE') || s.startsWith('^')) {
-    const clean = s.replace(/\.(NS|BO|L|TO|DE)$/i, '');
+  // 7. Already has extension e.g. .NS, .L, .TO, .DE or ^
+  if (s.endsWith('.NS') || s.endsWith('.L') || s.endsWith('.TO') || s.endsWith('.DE') || s.startsWith('^')) {
+    const clean = s.replace(/\.(NS|L|TO|DE)$/i, '');
     return { cleanSym: clean, yfTicker: s, isExplicitUS: false, isExplicitNSE: s.endsWith('.NS') };
   }
 
-  // 9. Plain ticker without prefix (e.g. INFY or TCS):
+  // 8. Plain ticker without prefix (e.g. INFY or TCS):
   // Default to Indian NSE (.NS), with fallback to US symbol if .NS returns no data
   return { cleanSym: s, yfTicker: `${s}.NS`, isExplicitUS: false, isExplicitNSE: false };
 }
@@ -1526,7 +1519,7 @@ function getBuiltinFormatGuideData() {
     numRows: 7,
     values: [
       ['Market', 'Format to Enter in A2', 'Example'],
-      ['Indian Stocks', 'NSE:<TICKER>,\nBOM:<TICKER>', 'NSE:INFY\nBOM:500209'],
+      ['Indian Stocks', 'NSE:<TICKER>,\n<TICKER>', 'NSE:INFY\nINFY'],
       ['US Stocks (Tech / NASDAQ)', 'NASDAQ:<TICKER>', 'NASDAQ:AAPL'],
       ['US Stocks (NYSE / Dow)', 'NYSE:<TICKER>', 'NYSE:JPM'],
       ['UK / London Stocks', 'LON:<TICKER>', 'LON:VOD'],

@@ -1483,8 +1483,8 @@ function fetchBarsFromGoogleFinance(ss, tickers) {
       let gfCode = batchTickers[i].trim();
       if (!gfCode.includes(':')) {
         gfCode = 'NSE:' + gfCode.replace(/\.(NS|BO)$/i, '');
-      } else if (gfCode.toUpperCase().startsWith('BSE:')) {
-        gfCode = 'BOM:' + gfCode.substring(4).trim();
+      } else if (gfCode.toUpperCase().startsWith('BSE:') || gfCode.toUpperCase().startsWith('BOM:')) {
+        gfCode = 'NSE:' + gfCode.replace(/^(BSE|BOM):/i, '').trim();
       }
       const formula = `=IFERROR(GOOGLEFINANCE("${gfCode}", "all", TODAY()-450, TODAY(), "WEEKLY"), "")`;
       formulaRow.push(formula, '', '', '', '', '');
@@ -2049,8 +2049,8 @@ function showAboutDialog() {
         </tr>
         <tr style="background: #1e293b; color: #f8fafc;">
           <td style="padding: 6px 8px; border: 1px solid #334155; font-weight: 600;">Indian Stocks</td>
-          <td style="padding: 6px 8px; border: 1px solid #334155; color: #93c5fd;">NSE:&lt;TICKER&gt;, BOM:&lt;TICKER&gt;</td>
-          <td style="padding: 6px 8px; border: 1px solid #334155; color: #cbd5e1;">NSE:INFY<br>BOM:500209</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #93c5fd;">NSE:&lt;TICKER&gt;, &lt;TICKER&gt;</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #cbd5e1;">NSE:INFY<br>INFY</td>
         </tr>
         <tr style="background: #1e293b; color: #f8fafc;">
           <td style="padding: 6px 8px; border: 1px solid #334155; font-weight: 600;">US Stocks (Tech / NASDAQ)</td>
@@ -2092,7 +2092,7 @@ function showAboutDialog() {
 /**
  * Helper to convert standard Google Finance ticker format to Yahoo Finance ticker format.
  * Matches your guide table:
- * - Indian: 'NSE:INFY' -> 'INFY.NS', 'BSE:500209' -> '500209.BO', 'TCS' -> 'TCS.NS'
+ * - Indian: 'NSE:INFY' -> 'INFY.NS', 'INFY' -> 'INFY.NS'
  * - US Tech: 'NASDAQ:AAPL' -> 'AAPL', 'NASDAQ:NVDA' -> 'NVDA'
  * - US NYSE: 'NYSE:JPM' -> 'JPM', 'NYSE:TSLA' -> 'TSLA'
  * - UK London: 'LON:VOD' -> 'VOD.L', 'LSE:VOD' -> 'VOD.L'
@@ -2127,13 +2127,11 @@ function convertToYfTicker(ticker) {
     return clean.replace(/\.US$/i, '');
   }
 
-  // 6. Indian market prefixes
+  // 6. Indian Stocks (NSE: prefix or legacy BSE:/BOM: routed to NSE)
   if (clean.startsWith('NSE:')) {
     return clean.substring(4).trim() + '.NS';
-  } else if (clean.startsWith('BSE:')) {
-    return clean.substring(4).trim() + '.BO';
-  } else if (clean.startsWith('BOM:')) {
-    return clean.substring(4).trim() + '.BO';
+  } else if (clean.startsWith('BSE:') || clean.startsWith('BOM:')) {
+    return clean.replace(/^(BSE|BOM):/i, '').trim() + '.NS';
   }
 
   // 7. If user already entered with suffix or symbol (e.g. VOD.L, SAP.DE, BTC-USD)
@@ -2314,7 +2312,7 @@ function processIdleMoneySale(sheet) {
     }
 
     // 5. Sort candidate lots FIFO by oldest Buy Date
-    candidateLots.sort(function(a, b) {
+    candidateLots.sort(function (a, b) {
       if (a.timestamp !== b.timestamp) {
         return a.timestamp - b.timestamp;
       }
@@ -2389,7 +2387,7 @@ function processIdleMoneySale(sheet) {
 
     // Delete fully sold rows descending from bottom to top so row indices don't shift
     if (rowsToDelete.length > 0) {
-      rowsToDelete.sort(function(a, b) { return b - a; });
+      rowsToDelete.sort(function (a, b) { return b - a; });
       for (var d = 0; d < rowsToDelete.length; d++) {
         sheet.deleteRow(rowsToDelete[d]);
       }
