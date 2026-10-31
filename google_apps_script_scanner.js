@@ -647,13 +647,13 @@ function onEdit(e) {
       if (destLastRow > 0) {
         const colBValues = destSheet.getRange(1, 2, destLastRow, 1).getValues();
         const targetClean = ticker.toUpperCase();
-        const targetNormalized = targetClean.replace(/^(NSE:|BSE:)/, '').replace(/\.(NS|BO)$/, '');
+        const targetNormalized = targetClean.replace(/^(NSE:|BSE:|BOM:|NASDAQ:|NYSE:|LON:|TSE:|ETR:)/i, '').replace(/\.(NS|BO|L|TO|DE)$/i, '');
 
         for (let r = 0; r < destLastRow; r++) {
           const val = String(colBValues[r][0]).trim().toUpperCase();
           if (val !== '') {
             lastDataRow = r + 1; // 1-indexed row of non-empty Col B
-            const valNorm = val.replace(/^(NSE:|BSE:)/, '').replace(/\.(NS|BO)$/, '');
+            const valNorm = val.replace(/^(NSE:|BSE:|BOM:|NASDAQ:|NYSE:|LON:|TSE:|ETR:)/i, '').replace(/\.(NS|BO|L|TO|DE)$/i, '');
             if (val === targetClean || valNorm === targetNormalized) {
               lastMatchingRow = r + 1; // 1-indexed row of last occurrence
             }
@@ -1482,7 +1482,9 @@ function fetchBarsFromGoogleFinance(ss, tickers) {
     for (let i = 0; i < batchTickers.length; i++) {
       let gfCode = batchTickers[i].trim();
       if (!gfCode.includes(':')) {
-        gfCode = 'NSE:' + gfCode.replace('.NS', '').replace('.BO', '');
+        gfCode = 'NSE:' + gfCode.replace(/\.(NS|BO)$/i, '');
+      } else if (gfCode.toUpperCase().startsWith('BSE:')) {
+        gfCode = 'BOM:' + gfCode.substring(4).trim();
       }
       const formula = `=IFERROR(GOOGLEFINANCE("${gfCode}", "all", TODAY()-450, TODAY(), "WEEKLY"), "")`;
       formulaRow.push(formula, '', '', '', '', '');
@@ -1738,7 +1740,7 @@ function ensureRow6Formulas(sheet) {
     'G6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,XLOOKUP(J6:J,'Current Holdings'!S:S,'Current Holdings'!X:X))))",
     'H6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,IF(VLOOKUP(J6:J,FILTER('Current Holdings'!B8:B,'Current Holdings'!E8:E=\"Bullish Buy\"),1,0)<>\"\",\"Yes\",\"No\"))))",
     'O6': "=IFERROR(ARRAYFORMULA(IF(N6:N=\"\",,CEILING(M6:M*1.005,0.05))))",
-    'P6': "=IFERROR(MAP(J6:J,LAMBDA(ticker, IF(ticker=\"\",, GOOGLEFINANCE(ticker,\"price\")))))"
+    'P6': "=IFERROR(MAP(J6:J, LAMBDA(t, IF(t=\"\",, IF(ISNUMBER(SEARCH(\":\", t)), IFERROR(GOOGLEFINANCE(t, \"price\"), IFERROR(GOOGLEFINANCE(SUBSTITUTE(t, \"BSE:\", \"BOM:\"), \"price\"))), IFERROR(GOOGLEFINANCE(\"NSE:\" & t, \"price\"), IFERROR(GOOGLEFINANCE(\"BOM:\" & t, \"price\"))))))))"
   };
 
   for (const cell in formulas) {
@@ -2038,35 +2040,109 @@ function showAboutDialog() {
       3. Tracking for Bearish Buy Signal<br>
       4. Bullish Buy Running (holding above 20W floor)<br>
       5. Neutral / Inside 20W Range</p>
+      <p><b>Supported Stock Code Formats (Column A):</b></p>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11.5px;">
+        <tr style="background: #0f172a; color: #38bdf8; text-align: left;">
+          <th style="padding: 6px 8px; border: 1px solid #334155;">Market</th>
+          <th style="padding: 6px 8px; border: 1px solid #334155;">Format to Enter in Column A</th>
+          <th style="padding: 6px 8px; border: 1px solid #334155;">Example</th>
+        </tr>
+        <tr style="background: #1e293b; color: #f8fafc;">
+          <td style="padding: 6px 8px; border: 1px solid #334155; font-weight: 600;">Indian Stocks</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #93c5fd;">NSE:&lt;TICKER&gt;, BOM:&lt;TICKER&gt;</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #cbd5e1;">NSE:INFY<br>BOM:500209</td>
+        </tr>
+        <tr style="background: #1e293b; color: #f8fafc;">
+          <td style="padding: 6px 8px; border: 1px solid #334155; font-weight: 600;">US Stocks (Tech / NASDAQ)</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #93c5fd;">NASDAQ:&lt;TICKER&gt;</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #cbd5e1;">NASDAQ:AAPL</td>
+        </tr>
+        <tr style="background: #1e293b; color: #f8fafc;">
+          <td style="padding: 6px 8px; border: 1px solid #334155; font-weight: 600;">US Stocks (NYSE / Dow)</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #93c5fd;">NYSE:&lt;TICKER&gt;</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #cbd5e1;">NYSE:JPM</td>
+        </tr>
+        <tr style="background: #1e293b; color: #f8fafc;">
+          <td style="padding: 6px 8px; border: 1px solid #334155; font-weight: 600;">UK / London Stocks</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #93c5fd;">LON:&lt;TICKER&gt;</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #cbd5e1;">LON:VOD</td>
+        </tr>
+        <tr style="background: #1e293b; color: #f8fafc;">
+          <td style="padding: 6px 8px; border: 1px solid #334155; font-weight: 600;">Canadian / Toronto Stocks</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #93c5fd;">TSE:&lt;TICKER&gt;</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #cbd5e1;">TSE:SHOP</td>
+        </tr>
+        <tr style="background: #1e293b; color: #f8fafc;">
+          <td style="padding: 6px 8px; border: 1px solid #334155; font-weight: 600;">European / German Stocks</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #93c5fd;">ETR:&lt;TICKER&gt;</td>
+          <td style="padding: 6px 8px; border: 1px solid #334155; color: #cbd5e1;">ETR:SAP</td>
+        </tr>
+      </table>
+      <p style="font-size: 11px; color: #64748b; margin-top: -6px;"><i>* Tickers entered without prefix (e.g. <code>TCS</code>) automatically default to Indian NSE (<code>NSE:TCS</code>).</i></p>
+
       <p style="color: #64748b; font-size: 11px;">Powered by Google Apps Script, Yahoo Finance v8 API & GoogleFinance native engine.</p>
     </div>
   `;
   const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
-    .setWidth(550)
-    .setHeight(430);
+    .setWidth(600)
+    .setHeight(620);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'About Darvas Strategy Scanner');
 }
 
 /**
- * Helper to convert Google Finance ticker format to Yahoo Finance ticker format.
- * E.g., 'NSE:INFY' -> 'INFY.NS', 'NSE:YESBANK' -> 'YESBANK.NS', 'BSE:500209' -> '500209.BO'
+ * Helper to convert standard Google Finance ticker format to Yahoo Finance ticker format.
+ * Matches your guide table:
+ * - Indian: 'NSE:INFY' -> 'INFY.NS', 'BSE:500209' -> '500209.BO', 'TCS' -> 'TCS.NS'
+ * - US Tech: 'NASDAQ:AAPL' -> 'AAPL', 'NASDAQ:NVDA' -> 'NVDA'
+ * - US NYSE: 'NYSE:JPM' -> 'JPM', 'NYSE:TSLA' -> 'TSLA'
+ * - UK London: 'LON:VOD' -> 'VOD.L', 'LSE:VOD' -> 'VOD.L'
+ * - Canadian: 'TSE:SHOP' -> 'SHOP.TO', 'TSX:SHOP' -> 'SHOP.TO'
+ * - European / German: 'ETR:SAP' -> 'SAP.DE', 'FRA:SAP' -> 'SAP.DE'
  */
 function convertToYfTicker(ticker) {
   let clean = String(ticker).trim().toUpperCase();
-  for (const p of ['NASDAQ:', 'NYSE:', 'AMEX:', 'US:']) {
-    if (clean.startsWith(p)) return clean.substring(p.length).trim();
+
+  // 1. UK / London Stocks (LON:VOD or LSE:VOD -> VOD.L)
+  if (clean.startsWith('LON:')) return clean.substring(4).trim() + '.L';
+  if (clean.startsWith('LSE:')) return clean.substring(4).trim() + '.L';
+
+  // 2. Canadian / Toronto Stocks (TSE:SHOP or TSX:SHOP -> SHOP.TO)
+  if (clean.startsWith('TSE:')) return clean.substring(4).trim() + '.TO';
+  if (clean.startsWith('TSX:')) return clean.substring(4).trim() + '.TO';
+
+  // 3. European / German Stocks (ETR:SAP or FRA:SAP -> SAP.DE)
+  if (clean.startsWith('ETR:')) return clean.substring(4).trim() + '.DE';
+  if (clean.startsWith('FRA:')) return clean.substring(4).trim() + '.DE';
+
+  // 4. US Stocks (NASDAQ:AAPL, NYSE:JPM, AMEX:SPY, ARCA:QQQ, etc. -> strip prefix)
+  const usPrefixes = ['NASDAQ:', 'NYSE:', 'AMEX:', 'BATS:', 'ARCA:', 'OTCMKTS:', 'US:'];
+  for (const p of usPrefixes) {
+    if (clean.startsWith(p)) {
+      return clean.substring(p.length).trim();
+    }
   }
+
+  // 5. Strip .US suffix if entered (e.g. AAPL.US -> AAPL)
   if (clean.endsWith('.US')) {
     return clean.replace(/\.US$/i, '');
   }
+
+  // 6. Indian market prefixes
   if (clean.startsWith('NSE:')) {
-    clean = clean.substring(4).trim() + '.NS';
+    return clean.substring(4).trim() + '.NS';
   } else if (clean.startsWith('BSE:')) {
-    clean = clean.substring(4).trim() + '.BO';
-  } else if (!clean.endsWith('.NS') && !clean.endsWith('.BO')) {
-    clean = clean + '.NS';
+    return clean.substring(4).trim() + '.BO';
+  } else if (clean.startsWith('BOM:')) {
+    return clean.substring(4).trim() + '.BO';
   }
-  return clean;
+
+  // 7. If user already entered with suffix or symbol (e.g. VOD.L, SAP.DE, BTC-USD)
+  if (clean.includes('.') || clean.includes('-') || clean.includes('=')) {
+    return clean;
+  }
+
+  // 8. Plain ticker without exchange prefix (defaults to Indian NSE)
+  return clean + '.NS';
 }
 
 // ==============================================================================

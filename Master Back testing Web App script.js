@@ -2,28 +2,137 @@
 
 /**
  * ============================================================================
- * DARVAS BEARISH + BULLISH COMBO SYSTEMATIC BACKTEST ENGINE - MASTER WEB APP
+ * DARVAS BEARISH + BULLISH COMBO SYSTEMATIC BACKTEST ENGINE - MASTER SCRIPT
  * ============================================================================
  * 
- * This master script serves both:
- * 1. Local execution inside the Master Sheet (via UI Menu)
- * 2. Centralized Web App Engine for all copied user sheets (via doPost endpoint)
+ * Architecture (Dev-to-Prod Native Apps Script Library):
+ * - This Master script serves as the centralized library engine for all client sheets.
+ * - Client sheets link to this project as a library with Identifier: "DarvasBacktestMaster".
+ * - When you update this Master script, all client sheets receive updates immediately!
+ * 
+ * One-Time Admin Setup to link Client Template to this Master Library:
+ * 1. In this Master project: Project Settings (gear icon) > Copy "Script ID".
+ * 2. In the Client Template sheet: Extensions > Apps Script.
+ * 3. In the left sidebar, click '+' next to "Libraries".
+ * 4. Paste this Script ID, click "Look up".
+ * 5. Set Identifier to: DarvasBacktestMaster
+ * 6. Set Version to: HEAD (Development mode).
+ * 7. Click "Add" and Save (Ctrl+S).
  * ============================================================================
  */
 
-function onOpen() {
+function onOpen(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const inputSheet = ss.getSheetByName('Input - Output');
+
+  let isMaster = true;
+  if (inputSheet) {
+    const j1 = String(inputSheet.getRange('J1').getValue()).trim().toLowerCase();
+    const k1 = String(inputSheet.getRange('K1').getValue()).trim().toLowerCase();
+    const masterSpreadsheetId = PropertiesService.getScriptProperties().getProperty('MASTER_SPREADSHEET_ID');
+    isMaster = (!masterSpreadsheetId || ss.getId() === masterSpreadsheetId) && (j1 === 'market' && k1.includes('format'));
+
+    if (isMaster) {
+      // It is the Master Sheet: capture and store the live table from J1:L11
+      captureAndStoreFormatGuide(inputSheet, ss.getId());
+    } else {
+      // It is a Client Sheet: auto-populate / refresh J1:L11 immediately on open or refresh
+      try {
+        syncFormatGuideToActiveSheet();
+      } catch (err) {
+        Logger.log('Auto-sync format guide error: ' + err);
+      }
+    }
+  }
+
+  buildMenuForActiveSheet(isMaster);
+}
+
+/**
+ * Dedicated entry point called by Client Connector scripts on client open / refresh.
+ */
+function onClientOpen(e) {
+  // Always build clean client-facing menu (isMaster = false)
+  buildMenuForActiveSheet(false);
+  try {
+    syncFormatGuideToActiveSheet();
+  } catch (err) {
+    Logger.log('Client auto-populate error: ' + err);
+  }
+}
+
+/**
+ * Simple trigger: captures live edits made in J1:L11 on the Master Sheet automatically!
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+  try {
+    const sheet = e.range.getSheet();
+    if (sheet.getName() !== 'Input - Output') return;
+
+    // Check if edit overlaps columns J (10), K (11), L (12) and rows 1 to 11
+    const row = e.range.getRow();
+    const col = e.range.getColumn();
+    const lastRow = e.range.getLastRow();
+    const lastCol = e.range.getLastColumn();
+
+    if (col <= 12 && lastCol >= 10 && row <= 11 && lastRow >= 1) {
+      const ss = sheet.getParent();
+      const masterSpreadsheetId = PropertiesService.getScriptProperties().getProperty('MASTER_SPREADSHEET_ID');
+      const j1 = String(sheet.getRange('J1').getValue()).trim().toLowerCase();
+      const isMaster = (!masterSpreadsheetId || ss.getId() === masterSpreadsheetId) && j1 === 'market';
+
+      if (isMaster) {
+        captureAndStoreFormatGuide(sheet, ss.getId());
+      }
+    }
+  } catch (err) {
+    Logger.log('onEdit auto-save error: ' + err);
+  }
+}
+
+/**
+ * Builds the spreadsheet menu.
+ * When isMaster is false (Client sheets): format guide admin items are completely hidden!
+ * When isMaster is true (Master sheet): format guide admin tools are included.
+ */
+function buildMenuForActiveSheet(isMaster) {
+  if (isMaster === undefined) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const inputSheet = ss.getSheetByName('Input - Output');
+    const masterSpreadsheetId = PropertiesService.getScriptProperties().getProperty('MASTER_SPREADSHEET_ID');
+    const j1 = inputSheet ? String(inputSheet.getRange('J1').getValue()).trim().toLowerCase() : '';
+    const k1 = inputSheet ? String(inputSheet.getRange('K1').getValue()).trim().toLowerCase() : '';
+    isMaster = (!masterSpreadsheetId || ss.getId() === masterSpreadsheetId) && (j1 === 'market' && k1.includes('format'));
+  }
+
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 Darvas Backtest')
-    .addItem('▶ Run Backtest (Using Sheet Data)', 'runBacktestFromSheet')
-    .addItem('🌐 Run Backtest (Sync from Yahoo Finance)', 'runBacktestFromYahooFinance')
+  const menu = ui.createMenu('🚀 Darvas Backtest');
+
+  // Master Sheet ONLY: Run backtest using offline/existing sheet data
+  if (isMaster) {
+    menu.addItem('▶ Run Backtest (Using Sheet Data)', 'runBacktestFromSheet');
+  }
+
+  // Both Master & Client: Primary Yahoo Finance runner
+  menu.addItem('🌐 Run Backtest (Sync from Yahoo Finance)', 'runBacktestFromYahooFinance')
     .addSeparator()
     .addSubMenu(ui.createMenu('🎨 Apply Executive Theme (Rows 5-9)')
       .addItem('⭐ Option 1: Institutional Navy & Ice Blue', 'applyThemeNavy')
       .addItem('💜 Option 2: Royal Indigo & Lilac', 'applyThemeIndigo')
       .addItem('🌿 Option 3: Bloomberg Emerald & Mint', 'applyThemeEmerald')
       .addSeparator()
-      .addItem('🔄 Option 4: Clean Minimal Slate Gray', 'applyThemeCleanGray'))
-    .addToUi();
+      .addItem('🔄 Option 4: Clean Minimal Slate Gray', 'applyThemeCleanGray'));
+
+  // Master Sheet ONLY: Format Guide management tools
+  if (isMaster) {
+    menu.addSeparator()
+      .addSubMenu(ui.createMenu('⚙️ Format Guide (Master Tools)')
+        .addItem('💾 Save Format Guide to Memory (from J1:L11)', 'saveFormatGuideFromMasterSheet')
+        .addItem('📋 Load / Sync Format Guide (into J1:L7)', 'syncFormatGuideToActiveSheet'));
+  }
+
+  menu.addToUi();
 }
 
 function runBacktestFromSheet() {
@@ -73,11 +182,13 @@ function executeBacktestEngine(useYahooFinance) {
 
   let dailyBars = [];
   let dividendMap = {};
+  let actualTicker = tickerRaw;
 
   if (useYahooFinance) {
     const fetched = fetchYahooFinanceDailyAndDividends(tickerInfo, startDate, endDate);
     dailyBars = fetched.bars;
     dividendMap = fetched.dividends;
+    actualTicker = fetched.actualTicker || tickerInfo.yfTicker || tickerRaw;
   } else {
     const lastRow = dataSheet.getLastRow();
     if (lastRow < 3) {
@@ -114,16 +225,54 @@ function executeBacktestEngine(useYahooFinance) {
     startDate, endDate, targetPct, bullishMinReturnPct
   );
 
-  // Write Summary to 'Input - Output'
-  inputSheet.getRange('A6:F6').setValues([[
+  // 1. Populate Ticker used in A3 (no formatting applied)
+  inputSheet.getRange('A3').setValue('Ticker used: ' + actualTicker);
+
+  // 1b. Auto-populate Format Guide in J1:L11 if not yet present
+  if (!inputSheet.getRange('J1').getValue()) {
+    try {
+      syncFormatGuideToActiveSheet();
+    } catch (guideErr) {
+      // Non-fatal if guide unavailable
+    }
+  }
+
+  // 2. Write Summary to 'Input - Output' (Columns A to G)
+  inputSheet.getRange('G5').setValue('Current Investment Amount in the Stocks');
+  inputSheet.getRange('A6:G6').setValues([[
     d.totalPortfolioReturnAmt, d.totalRealizedProfit, d.tradeRealizedProfit,
-    d.idleInterestTotal, d.dividendTotal, d.unrealizedOpenPnl
-  ]]);
+    d.idleInterestTotal, d.dividendTotal, d.unrealizedOpenPnl,
+    d.currentInvestedAmount
+  ]]).setNumberFormat('#,##0');
+
+  // Ensure G5:G6 match active theme formatting from F5:F6
+  try {
+    const f5 = inputSheet.getRange('F5');
+    const f6 = inputSheet.getRange('F6');
+    inputSheet.getRange('G5')
+      .setBackground(f5.getBackground())
+      .setFontColor(f5.getFontColor())
+      .setFontWeight(f5.getFontWeight())
+      .setFontSize(f5.getFontSize())
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle');
+    inputSheet.getRange('G6')
+      .setBackground(f6.getBackground())
+      .setFontColor(f6.getFontColor())
+      .setFontWeight(f6.getFontWeight())
+      .setFontSize(f6.getFontSize())
+      .setHorizontalAlignment('right')
+      .setVerticalAlignment('middle')
+      .setNumberFormat('#,##0');
+  } catch (fmtErr) {
+    // Suppress if formatting inaccessible
+  }
 
   inputSheet.getRange('A9:F9').setValues([[
     d.totalPortfolioReturnPct / 100, d.xirrPct / 100, d.maxDrawdownPct / 100,
     d.tradesRatio, d.endingOverallCapital, d.endingTrancheAmount
   ]]);
+  inputSheet.getRange('E9:F9').setNumberFormat('#,##0');
 
   // Write Detailed Trades to 'Historical Data and Trades'
   const tradeHeaders = [
@@ -652,6 +801,7 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
   const openPositionsInvested = openTrades.reduce((acc, t) => acc + t.investedAmt, 0);
   const openPositionsCurrentVal = openTrades.reduce((acc, t) => acc + (t.shares * lastClose), 0);
   const unrealizedOpenPnl = Math.round((openPositionsCurrentVal - openPositionsInvested) * 100) / 100;
+  const currentInvestedAmount = Math.round(openPositionsInvested * 100) / 100;
 
   const totalPortfolioReturnAmt = Math.round((totalRealizedProfit + unrealizedOpenPnl) * 100) / 100;
   const totalPortfolioReturnPct = Math.round((totalPortfolioReturnAmt / totalCapital) * 10000) / 100;
@@ -770,6 +920,7 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
     idleInterestTotal: idleInterestTotal,
     dividendTotal: dividendTotal,
     unrealizedOpenPnl: unrealizedOpenPnl,
+    currentInvestedAmount: currentInvestedAmount,
     totalPortfolioReturnPct: totalPortfolioReturnPct,
     xirrPct: xirrPct,
     maxDrawdownPct: maxDrawdownPct,
@@ -1026,41 +1177,62 @@ function calculateXIRR(cashFlows) {
 function resolveTicker(tickerRaw) {
   let s = String(tickerRaw || 'INFY').trim().toUpperCase();
 
-  // US exchange prefixes: NASDAQ:AAPL, NYSE:MSFT, US:TSLA, AMEX:SPY
+  // 1. UK / London Stocks: LON:VOD or LSE:VOD -> VOD.L
+  const lonMatch = s.match(/^(LON|LSE):\s*([A-Z0-9.\-]+)$/i);
+  if (lonMatch) {
+    const sym = lonMatch[2].trim().toUpperCase();
+    return { cleanSym: sym, yfTicker: sym.endsWith('.L') ? sym : `${sym}.L`, isExplicitUS: false, isExplicitNSE: false };
+  }
+
+  // 2. Canadian / Toronto Stocks: TSE:SHOP or TSX:SHOP -> SHOP.TO
+  const tseMatch = s.match(/^(TSE|TSX):\s*([A-Z0-9.\-]+)$/i);
+  if (tseMatch) {
+    const sym = tseMatch[2].trim().toUpperCase();
+    return { cleanSym: sym, yfTicker: sym.endsWith('.TO') ? sym : `${sym}.TO`, isExplicitUS: false, isExplicitNSE: false };
+  }
+
+  // 3. European / German Stocks: ETR:SAP or FRA:SAP -> SAP.DE
+  const etrMatch = s.match(/^(ETR|FRA):\s*([A-Z0-9.\-]+)$/i);
+  if (etrMatch) {
+    const sym = etrMatch[2].trim().toUpperCase();
+    return { cleanSym: sym, yfTicker: sym.endsWith('.DE') ? sym : `${sym}.DE`, isExplicitUS: false, isExplicitNSE: false };
+  }
+
+  // 4. US exchange prefixes: NASDAQ:AAPL, NYSE:MSFT, US:TSLA, AMEX:SPY
   const usMatch = s.match(/^(NASDAQ|NYSE|AMEX|US):\s*([A-Z0-9.\-]+)$/i);
   if (usMatch) {
     const sym = usMatch[2].trim().toUpperCase();
     return { cleanSym: sym, yfTicker: sym, isExplicitUS: true, isExplicitNSE: false };
   }
 
-  // BSE prefix: BSE:500325, BSE:TCS
-  const bseMatch = s.match(/^BSE:\s*([A-Z0-9.\-]+)$/i);
+  // 5. BSE / BOM prefix: BOM:500209, BSE:500325
+  const bseMatch = s.match(/^(BSE|BOM):\s*([A-Z0-9.\-]+)$/i);
   if (bseMatch) {
-    const sym = bseMatch[1].trim().toUpperCase();
+    const sym = bseMatch[2].trim().toUpperCase();
     return { cleanSym: sym, yfTicker: sym.endsWith('.BO') ? sym : `${sym}.BO`, isExplicitUS: false, isExplicitNSE: false };
   }
 
-  // NSE prefix: NSE:SBIN
+  // 6. NSE prefix: NSE:SBIN
   const nseMatch = s.match(/^NSE:\s*([A-Z0-9.\-]+)$/i);
   if (nseMatch) {
     const sym = nseMatch[1].trim().toUpperCase();
     return { cleanSym: sym, yfTicker: sym.endsWith('.NS') ? sym : `${sym}.NS`, isExplicitUS: false, isExplicitNSE: true };
   }
 
-  // US suffix e.g. AAPL.US
+  // 7. US suffix e.g. AAPL.US
   if (s.endsWith('.US')) {
     const sym = s.replace(/\.US$/i, '');
     return { cleanSym: sym, yfTicker: sym, isExplicitUS: true, isExplicitNSE: false };
   }
 
-  // Already has .NS or .BO or ^
-  if (s.endsWith('.NS') || s.endsWith('.BO') || s.startsWith('^')) {
-    const clean = s.replace(/\.(NS|BO)$/i, '');
+  // 8. Already has extension e.g. .NS, .BO, .L, .TO, .DE or ^
+  if (s.endsWith('.NS') || s.endsWith('.BO') || s.endsWith('.L') || s.endsWith('.TO') || s.endsWith('.DE') || s.startsWith('^')) {
+    const clean = s.replace(/\.(NS|BO|L|TO|DE)$/i, '');
     return { cleanSym: clean, yfTicker: s, isExplicitUS: false, isExplicitNSE: s.endsWith('.NS') };
   }
 
-  // Plain ticker without prefix (e.g. AAPL or INFY):
-  // Default cleanSym to s, yfTicker to s + '.NS' (will auto-fallback to s if .NS has no data)
+  // 9. Plain ticker without prefix (e.g. INFY or TCS):
+  // Default to Indian NSE (.NS), with fallback to US symbol if .NS returns no data
   return { cleanSym: s, yfTicker: `${s}.NS`, isExplicitUS: false, isExplicitNSE: false };
 }
 
@@ -1074,7 +1246,7 @@ function fetchYahooFinanceDailyAndDividends(tickerInfo, startDate, endDate) {
   let url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yfTicker)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
   let response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
   let json = null;
-  try { json = JSON.parse(response.getContentText()); } catch (e) {}
+  try { json = JSON.parse(response.getContentText()); } catch (e) { }
   let result = json && json.chart && json.chart.result && json.chart.result[0];
 
   // If no data found and ticker ended in .NS, fallback to clean ticker without .NS (US stock fallback)
@@ -1082,12 +1254,12 @@ function fetchYahooFinanceDailyAndDividends(tickerInfo, startDate, endDate) {
     const fallbackTicker = tInfo.cleanSym;
     url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(fallbackTicker)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
     response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    try { json = JSON.parse(response.getContentText()); } catch (e) {}
+    try { json = JSON.parse(response.getContentText()); } catch (e) { }
     result = json && json.chart && json.chart.result && json.chart.result[0];
   }
 
   if (!result) {
-    return { bars: [], dividends: {} };
+    return { bars: [], dividends: {}, actualTicker: yfTicker };
   }
 
   const timestamps = result.timestamp || [];
@@ -1127,7 +1299,7 @@ function fetchYahooFinanceDailyAndDividends(tickerInfo, startDate, endDate) {
     });
   }
 
-  return { bars: bars, dividends: dividends };
+  return { bars: bars, dividends: dividends, actualTicker: yfTicker };
 }
 
 function fetchYahooFinanceDividendsOnly(tickerInfo, startDate, endDate) {
@@ -1141,13 +1313,13 @@ function fetchYahooFinanceDividendsOnly(tickerInfo, startDate, endDate) {
     let url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yfTicker)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
     let response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     let json = null;
-    try { json = JSON.parse(response.getContentText()); } catch (e) {}
+    try { json = JSON.parse(response.getContentText()); } catch (e) { }
     let result = json && json.chart && json.chart.result && json.chart.result[0];
 
     if (!result && yfTicker.endsWith('.NS') && !tInfo.isExplicitNSE) {
       url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tInfo.cleanSym)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
       response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-      try { json = JSON.parse(response.getContentText()); } catch (e) {}
+      try { json = JSON.parse(response.getContentText()); } catch (e) { }
       result = json && json.chart && json.chart.result && json.chart.result[0];
     }
 
@@ -1192,14 +1364,15 @@ function applyKpiTheme(themeKey) {
 
   const t = themes[themeKey] || themes.navy;
 
-  sheet.getRange('A5:F5').setBackground(t.hdrBg).setFontColor(t.hdrColor).setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle');
-  sheet.getRange('A6:F6').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(12).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('₹#,##0');
+  sheet.getRange('G5').setValue('Current Investment Amount in the Stocks');
+  sheet.getRange('A5:G5').setBackground(t.hdrBg).setFontColor(t.hdrColor).setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sheet.getRange('A6:G6').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(12).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('#,##0');
   sheet.getRange('A8:F8').setBackground(t.hdrBg).setFontColor(t.hdrColor).setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.getRange('A9:C9').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(12).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('0.00%');
   sheet.getRange('D9').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(11).setHorizontalAlignment('center').setVerticalAlignment('middle');
-  sheet.getRange('E9:F9').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(11).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('₹#,##0');
+  sheet.getRange('E9:F9').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(11).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('#,##0');
 
-  sheet.getRange('A5:F6').setBorder(true, true, true, true, true, true, t.borderColor, SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange('A5:G6').setBorder(true, true, true, true, true, true, t.borderColor, SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange('A8:F9').setBorder(true, true, true, true, true, true, t.borderColor, SpreadsheetApp.BorderStyle.SOLID);
 
   sheet.setRowHeight(5, 28);
@@ -1209,4 +1382,397 @@ function applyKpiTheme(themeKey) {
   sheet.setRowHeight(9, 34);
 
   ss.toast(`Theme '${t.name}' applied to Rows 5-9!`, '🎨 Styling Applied', 4);
+}
+
+// ==============================================================================
+// FORMATTING GUIDE TABLE AUTOMATION (COLUMNS J1:L11)
+// ==============================================================================
+
+/**
+ * Automatically captures the formatting guide table from J1:L11 on the Master Sheet
+ * and persists the entire visual snapshot (values, colors, fonts, merges, row/col sizes)
+ * into ScriptProperties and CacheService.
+ */
+function captureAndStoreFormatGuide(sheet, masterId) {
+  try {
+    const payload = extractFormatGuideData(sheet, masterId);
+    if (!payload) return;
+
+    const jsonStr = JSON.stringify(payload);
+    PropertiesService.getScriptProperties().setProperty('MASTER_FORMAT_GUIDE_DATA', jsonStr);
+    PropertiesService.getScriptProperties().setProperty('MASTER_SPREADSHEET_ID', String(masterId));
+    CacheService.getScriptCache().put('MASTER_FORMAT_GUIDE_DATA', jsonStr, 21600); // 6 hours cache
+
+    Logger.log('✅ Master Format Guide (J1:L11) captured and saved from sheet ID: ' + masterId);
+  } catch (err) {
+    Logger.log('⚠️ Error capturing format guide: ' + err);
+  }
+}
+
+/**
+ * Extracts all cell content and styling metadata from the formatting guide table of the specified sheet.
+ * Filters out any empty/spacer rows so only valid rows with text content are captured.
+ */
+function extractFormatGuideData(sheet, masterId) {
+  try {
+    const rawValues = sheet.getRange('J1:L11').getValues();
+    const rawBackgrounds = sheet.getRange('J1:L11').getBackgrounds();
+    const rawFontColors = sheet.getRange('J1:L11').getFontColors();
+    const rawFontWeights = sheet.getRange('J1:L11').getFontWeights();
+    const rawFontSizes = sheet.getRange('J1:L11').getFontSizes();
+    const rawHAligns = sheet.getRange('J1:L11').getHorizontalAlignments();
+    const rawVAligns = sheet.getRange('J1:L11').getVerticalAlignments();
+    const rawWraps = sheet.getRange('J1:L11').getWraps();
+    const rawNumberFormats = sheet.getRange('J1:L11').getNumberFormats();
+
+    // Strictly filter out any empty rows
+    const cleanValues = [];
+    const cleanBackgrounds = [];
+    const cleanFontColors = [];
+    const cleanFontWeights = [];
+    const cleanFontSizes = [];
+    const cleanHAligns = [];
+    const cleanVAligns = [];
+    const cleanWraps = [];
+    const cleanNumberFormats = [];
+    const cleanRowHeights = [];
+
+    for (let r = 0; r < rawValues.length; r++) {
+      const hasText = rawValues[r].some(cell => String(cell).trim() !== '');
+      if (hasText) {
+        cleanValues.push(rawValues[r]);
+        cleanBackgrounds.push(rawBackgrounds[r]);
+        cleanFontColors.push(rawFontColors[r]);
+        cleanFontWeights.push(rawFontWeights[r]);
+        cleanFontSizes.push(rawFontSizes[r]);
+        cleanHAligns.push(rawHAligns[r]);
+        cleanVAligns.push(rawVAligns[r]);
+        cleanWraps.push(rawWraps[r]);
+        cleanNumberFormats.push(rawNumberFormats[r]);
+        cleanRowHeights.push(sheet.getRowHeight(r + 1));
+      }
+    }
+
+    if (cleanValues.length === 0) return null;
+
+    const colWidths = [
+      sheet.getColumnWidth(10),
+      sheet.getColumnWidth(11),
+      sheet.getColumnWidth(12)
+    ];
+
+    return {
+      masterId: masterId || sheet.getParent().getId(),
+      updatedAt: new Date().toISOString(),
+      numRows: cleanValues.length,
+      values: cleanValues,
+      backgrounds: cleanBackgrounds,
+      fontColors: cleanFontColors,
+      fontWeights: cleanFontWeights,
+      fontSizes: cleanFontSizes,
+      hAligns: cleanHAligns,
+      vAligns: cleanVAligns,
+      wraps: cleanWraps,
+      numberFormats: cleanNumberFormats,
+      colWidths: colWidths,
+      rowHeights: cleanRowHeights
+    };
+  } catch (e) {
+    Logger.log('extractFormatGuideData error: ' + e);
+    return null;
+  }
+}
+
+/**
+ * Retrieves the stored format guide data from Cache, ScriptProperties,
+ * or falls back to the master sheet or built-in high-fidelity default.
+ */
+function getStoredFormatGuideData() {
+  // 1. Try CacheService
+  try {
+    const cached = CacheService.getScriptCache().get('MASTER_FORMAT_GUIDE_DATA');
+    if (cached) return JSON.parse(cached);
+  } catch (e) { }
+
+  // 2. Try ScriptProperties
+  try {
+    const prop = PropertiesService.getScriptProperties().getProperty('MASTER_FORMAT_GUIDE_DATA');
+    if (prop) return JSON.parse(prop);
+  } catch (e) { }
+
+  // 3. Try reading from Master Spreadsheet if ID is stored
+  try {
+    const masterId = PropertiesService.getScriptProperties().getProperty('MASTER_SPREADSHEET_ID');
+    if (masterId) {
+      const masterSs = SpreadsheetApp.openById(masterId);
+      const masterSheet = masterSs.getSheetByName('Input - Output');
+      if (masterSheet) {
+        return extractFormatGuideData(masterSheet, masterId);
+      }
+    }
+  } catch (e) { }
+
+  // 4. Built-in high fidelity fallback matching your exact design
+  return getBuiltinFormatGuideData();
+}
+
+/**
+ * Built-in high-fidelity fallback representation of the J1:L7 table.
+ * Exactly 7 consecutive rows with ZERO spacer lines in between.
+ * Colors exactly match Image 1 (pitch black header, vivid blue text, charcoal data rows).
+ */
+function getBuiltinFormatGuideData() {
+  return {
+    numRows: 7,
+    values: [
+      ['Market', 'Format to Enter in A2', 'Example'],
+      ['Indian Stocks', 'NSE:<TICKER>,\nBOM:<TICKER>', 'NSE:INFY\nBOM:500209'],
+      ['US Stocks (Tech / NASDAQ)', 'NASDAQ:<TICKER>', 'NASDAQ:AAPL'],
+      ['US Stocks (NYSE / Dow)', 'NYSE:<TICKER>', 'NYSE:JPM'],
+      ['UK / London Stocks', 'LON:<TICKER>', 'LON:VOD'],
+      ['Canadian / Toronto Stocks', 'TSE:<TICKER>', 'TSE:SHOP'],
+      ['European / German Stocks', 'ETR:<TICKER>', 'ETR:SAP']
+    ],
+    backgrounds: [
+      ['#000000', '#000000', '#000000'],
+      ['#141414', '#141414', '#141414'],
+      ['#141414', '#141414', '#141414'],
+      ['#141414', '#141414', '#141414'],
+      ['#141414', '#141414', '#141414'],
+      ['#141414', '#141414', '#141414'],
+      ['#141414', '#141414', '#141414']
+    ],
+    fontColors: [
+      ['#2563eb', '#2563eb', '#2563eb'],
+      ['#ffffff', '#93c5fd', '#cbd5e1'],
+      ['#ffffff', '#93c5fd', '#cbd5e1'],
+      ['#ffffff', '#93c5fd', '#cbd5e1'],
+      ['#ffffff', '#93c5fd', '#cbd5e1'],
+      ['#ffffff', '#93c5fd', '#cbd5e1'],
+      ['#ffffff', '#93c5fd', '#cbd5e1']
+    ],
+    fontWeights: [
+      ['bold', 'bold', 'bold'],
+      ['normal', 'normal', 'normal'],
+      ['normal', 'normal', 'normal'],
+      ['normal', 'normal', 'normal'],
+      ['normal', 'normal', 'normal'],
+      ['normal', 'normal', 'normal'],
+      ['normal', 'normal', 'normal']
+    ],
+    fontSizes: [
+      [10, 10, 10],
+      [9.5, 9.5, 9.5],
+      [9.5, 9.5, 9.5],
+      [9.5, 9.5, 9.5],
+      [9.5, 9.5, 9.5],
+      [9.5, 9.5, 9.5],
+      [9.5, 9.5, 9.5]
+    ],
+    hAligns: [
+      ['left', 'left', 'left'],
+      ['left', 'left', 'left'],
+      ['left', 'left', 'left'],
+      ['left', 'left', 'left'],
+      ['left', 'left', 'left'],
+      ['left', 'left', 'left'],
+      ['left', 'left', 'left']
+    ],
+    vAligns: [
+      ['middle', 'middle', 'middle'],
+      ['middle', 'middle', 'middle'],
+      ['middle', 'middle', 'middle'],
+      ['middle', 'middle', 'middle'],
+      ['middle', 'middle', 'middle'],
+      ['middle', 'middle', 'middle'],
+      ['middle', 'middle', 'middle']
+    ],
+    wraps: [
+      [true, true, true],
+      [true, true, true],
+      [true, true, true],
+      [true, true, true],
+      [true, true, true],
+      [true, true, true],
+      [true, true, true]
+    ],
+    colWidths: [180, 190, 150]
+  };
+}
+
+/**
+ * Applies a guide data payload to J1:L of the target sheet with full formatting.
+ * Strictly writes consecutive rows with ZERO spacer lines and cleans rows 8-11.
+ */
+function applyGuideDataToSheet(targetSheet, guideData) {
+  if (!targetSheet || !guideData || !guideData.values || guideData.values.length === 0) return;
+
+  // Filter out any empty rows just in case
+  const validIndices = [];
+  for (let i = 0; i < guideData.values.length; i++) {
+    if (guideData.values[i].some(c => String(c).trim() !== '')) {
+      validIndices.push(i);
+    }
+  }
+
+  const values = validIndices.map(i => guideData.values[i]);
+  const backgrounds = guideData.backgrounds ? validIndices.map(i => guideData.backgrounds[i]) : null;
+  const fontColors = guideData.fontColors ? validIndices.map(i => guideData.fontColors[i]) : null;
+  const fontWeights = guideData.fontWeights ? validIndices.map(i => guideData.fontWeights[i]) : null;
+  const fontSizes = guideData.fontSizes ? validIndices.map(i => guideData.fontSizes[i]) : null;
+  const hAligns = guideData.hAligns ? validIndices.map(i => guideData.hAligns[i]) : null;
+  const vAligns = guideData.vAligns ? validIndices.map(i => guideData.vAligns[i]) : null;
+  const wraps = guideData.wraps ? validIndices.map(i => guideData.wraps[i]) : null;
+  const numberFormats = guideData.numberFormats ? validIndices.map(i => guideData.numberFormats[i]) : null;
+
+  const numRows = values.length;
+  const numCols = values[0].length;
+
+  // 1. Break apart any existing merges in J1:L11 on destination sheet
+  try {
+    targetSheet.getRange('J1:L11').breakApart();
+  } catch (e) { }
+
+  // 2. Completely clear content and format in J1:L11 to erase old borders or residual spacer formatting
+  try {
+    targetSheet.getRange('J1:L11').clearContent().clearFormat().clearNote();
+  } catch (e) { }
+
+  // 3. Write clean consecutive rows strictly to J1:L<numRows>
+  const tableRange = targetSheet.getRange(1, 10, numRows, numCols);
+
+  tableRange.setValues(values);
+  if (backgrounds) tableRange.setBackgrounds(backgrounds);
+  if (fontColors) tableRange.setFontColors(fontColors);
+  if (fontWeights) tableRange.setFontWeights(fontWeights);
+  if (fontSizes) tableRange.setFontSizes(fontSizes);
+  if (hAligns) tableRange.setHorizontalAlignments(hAligns);
+  if (vAligns) tableRange.setVerticalAlignments(vAligns);
+  if (wraps) tableRange.setWraps(wraps);
+  if (numberFormats) tableRange.setNumberFormats(numberFormats);
+
+  // 4. Set clean borders strictly on the table rows (J1:L7)
+  tableRange.setBorder(true, true, true, true, true, true, '#334155', SpreadsheetApp.BorderStyle.SOLID);
+
+  // 5. Apply column widths (Cols J, K, L = 10, 11, 12)
+  if (guideData.colWidths && guideData.colWidths.length === 3) {
+    try {
+      targetSheet.setColumnWidth(10, guideData.colWidths[0]);
+      targetSheet.setColumnWidth(11, guideData.colWidths[1]);
+      targetSheet.setColumnWidth(12, guideData.colWidths[2]);
+    } catch (e) { }
+  }
+
+  // 6. Apply row heights for rows that belong to the table
+  for (let r = 0; r < numRows; r++) {
+    try {
+      const h = (guideData.rowHeights && guideData.rowHeights[r]) ? guideData.rowHeights[r] : 28;
+      targetSheet.setRowHeight(r + 1, h);
+    } catch (e) { }
+  }
+}
+
+/**
+ * Explicit Master Action: Captures J1:L11 from Master Sheet and stores it in memory.
+ * Re-applies the cleaned table to remove any spacer lines immediately.
+ */
+function saveFormatGuideFromMasterSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const inputSheet = ss.getSheetByName('Input - Output');
+  if (!inputSheet) {
+    SpreadsheetApp.getUi().alert("Error: 'Input - Output' sheet not found in the active spreadsheet.");
+    return;
+  }
+
+  const payload = extractFormatGuideData(inputSheet, ss.getId());
+  if (!payload || !payload.values || payload.values.length === 0) {
+    SpreadsheetApp.getUi().alert("Error: No data found in J1:L11 to save.");
+    return;
+  }
+
+  const jsonStr = JSON.stringify(payload);
+  PropertiesService.getScriptProperties().setProperty('MASTER_FORMAT_GUIDE_DATA', jsonStr);
+  PropertiesService.getScriptProperties().setProperty('MASTER_SPREADSHEET_ID', ss.getId());
+  CacheService.getScriptCache().put('MASTER_FORMAT_GUIDE_DATA', jsonStr, 21600); // 6 hours
+
+  // Apply clean consecutive rows back to the sheet to clean up any spacer lines immediately
+  applyGuideDataToSheet(inputSheet, payload);
+
+  SpreadsheetApp.getUi().alert(
+    "✅ Format Guide Saved to Memory!\n\n" +
+    "Captured " + payload.values.length + " clean rows from J1:L11 (all spacer lines removed).\n\n" +
+    "This updated text & formatting is now stored in memory and will auto-populate onto client sheets when opened or refreshed."
+  );
+}
+
+/**
+ * User-callable function (via menu): Syncs the stored formatting guide table into the active sheet.
+ * If executed on the Master Sheet, it saves the sheet's live content instead of overwriting it!
+ */
+function syncFormatGuideToActiveSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const inputSheet = ss.getSheetByName('Input - Output');
+  if (!inputSheet) {
+    SpreadsheetApp.getUi().alert("Error: 'Input - Output' sheet not found in the active spreadsheet.");
+    return;
+  }
+
+  const j1 = String(inputSheet.getRange('J1').getValue()).trim().toLowerCase();
+  const k1 = String(inputSheet.getRange('K1').getValue()).trim().toLowerCase();
+  const masterSpreadsheetId = PropertiesService.getScriptProperties().getProperty('MASTER_SPREADSHEET_ID');
+  const isMaster = (!masterSpreadsheetId || ss.getId() === masterSpreadsheetId) && (j1 === 'market' && k1.includes('format'));
+
+  // If running on the Master Sheet, NEVER overwrite with old pre-memory!
+  // Instead, save the master sheet's live content to memory!
+  if (isMaster) {
+    saveFormatGuideFromMasterSheet();
+    return;
+  }
+
+  // If running on a Client Sheet, load the stored guide data
+  const guideData = getStoredFormatGuideData();
+  applyGuideDataToSheet(inputSheet, guideData);
+
+  ss.toast('Formatting Guide table (J1:L7) synced and populated successfully!', '📋 Guide Synced', 5);
+}
+
+/**
+ * User-callable function (via menu): Prompts for a client sheet URL/ID and pushes the table directly into it.
+ */
+function pushFormatGuideToClientDialog() {
+  const ui = SpreadsheetApp.getUi();
+  const prompt = ui.prompt(
+    '📤 Push Format Guide to Client Sheet',
+    'Paste the URL or Spreadsheet ID of the client Google Sheet:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (prompt.getSelectedButton() !== ui.Button.OK) return;
+  const input = prompt.getResponseText().trim();
+  if (!input) {
+    ui.alert('Please enter a valid Google Sheet URL or Spreadsheet ID.');
+    return;
+  }
+
+  try {
+    let clientSs = null;
+    if (input.includes('docs.google.com/spreadsheets/d/')) {
+      clientSs = SpreadsheetApp.openByUrl(input);
+    } else {
+      clientSs = SpreadsheetApp.openById(input);
+    }
+
+    const clientInput = clientSs.getSheetByName('Input - Output');
+    if (!clientInput) {
+      ui.alert("Target spreadsheet found, but could not find the 'Input - Output' tab.");
+      return;
+    }
+
+    const guideData = getStoredFormatGuideData();
+    applyGuideDataToSheet(clientInput, guideData);
+
+    ui.alert('✅ Success!\nThe Formatting Guide table (J1:L7) has been pushed to:\n"' + clientSs.getName() + '"');
+  } catch (err) {
+    ui.alert('❌ Error pushing to client sheet:\n' + err.message);
+  }
 }
