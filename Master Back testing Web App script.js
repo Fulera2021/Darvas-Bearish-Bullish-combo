@@ -34,10 +34,15 @@ function runBacktestFromYahooFinance() {
   executeBacktestEngine(true);
 }
 
+function runTest() {
+  executeBacktestEngine(true);
+}
+
 /**
  * Local Execution Runner: Reads inputs from master sheet and writes results locally
  */
 function executeBacktestEngine(useYahooFinance) {
+  if (useYahooFinance === undefined) useYahooFinance = true;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const inputSheet = ss.getSheetByName('Input - Output');
   const dataSheet = ss.getSheetByName('Historical Data and Trades');
@@ -63,14 +68,14 @@ function executeBacktestEngine(useYahooFinance) {
 
   ss.toast("Running strategy simulation...", "Darvas Backtester", 10);
 
-  const cleanSym = tickerRaw.replace(/^(NSE:|BSE:)/i, '').trim();
-  const yfTicker = cleanSym.includes('.') ? cleanSym : `${cleanSym}.NS`;
+  const tickerInfo = resolveTicker(tickerRaw);
+  const cleanSym = tickerInfo.cleanSym;
 
   let dailyBars = [];
   let dividendMap = {};
 
   if (useYahooFinance) {
-    const fetched = fetchYahooFinanceDailyAndDividends(yfTicker, startDate, endDate);
+    const fetched = fetchYahooFinanceDailyAndDividends(tickerInfo, startDate, endDate);
     dailyBars = fetched.bars;
     dividendMap = fetched.dividends;
   } else {
@@ -96,7 +101,7 @@ function executeBacktestEngine(useYahooFinance) {
         }
       }
     }
-    dividendMap = fetchYahooFinanceDividendsOnly(yfTicker, startDate, endDate);
+    dividendMap = fetchYahooFinanceDividendsOnly(tickerInfo, startDate, endDate);
   }
 
   if (dailyBars.length < 20) {
@@ -201,10 +206,10 @@ function doPost(e) {
     let bullishMinReturnPct = params.bullishMinReturnPct;
     bullishMinReturnPct = (typeof bullishMinReturnPct === 'number') ? (bullishMinReturnPct > 1 ? bullishMinReturnPct : bullishMinReturnPct * 100) : 15.0;
 
-    const cleanSym = tickerRaw.replace(/^(NSE:|BSE:)/i, '').trim();
-    const yfTicker = cleanSym.includes('.') ? cleanSym : `${cleanSym}.NS`;
+    const tickerInfo = resolveTicker(tickerRaw);
+    const cleanSym = tickerInfo.cleanSym;
 
-    const fetched = fetchYahooFinanceDailyAndDividends(yfTicker, startDate, endDate);
+    const fetched = fetchYahooFinanceDailyAndDividends(tickerInfo, startDate, endDate);
     const dailyBars = fetched.bars;
     const dividendMap = fetched.dividends;
 
@@ -243,6 +248,7 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
   addWeeklyIndicators(weeklyBars);
 
   const weeklyLookup = {};
+  const weeklyKeysList = weeklyBars.map(w => `${w.isoYear}-${w.isoWeek}`);
   weeklyBars.forEach(w => {
     weeklyLookup[`${w.isoYear}-${w.isoWeek}`] = w;
   });
@@ -555,17 +561,30 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
                 availableCash -= investedAmt;
               }
             } else {
-              // A sell took place today on Friday.
+              // A sell took place today on the weekly close day (Friday or holiday Thursday).
               // Can't sell and buy on same day, so queue pending order for NEXT WEEK to buy when price comes!
-              const nextWeekDate = new Date(dayDate.getTime() + (3 * 86400000));
-              const nextIso = getIsoYearWeek(nextWeekDate);
-              pendingOrder = {
-                signalDate: dayDate,
-                ceiling: Math.round(dayClose * 1.005 * 100) / 100,
-                refClose: Math.round(dayClose * 100) / 100,
-                targetYear: nextIso.year,
-                targetWeek: nextIso.week
-              };
+              const currPos = weeklyKeysList.indexOf(weekKey);
+              if (currPos >= 0 && currPos + 1 < weeklyBars.length) {
+                const nextWBar = weeklyBars[currPos + 1];
+                pendingOrder = {
+                  signalDate: dayDate,
+                  ceiling: Math.round(dayClose * 1.005 * 100) / 100,
+                  refClose: Math.round(dayClose * 100) / 100,
+                  targetYear: nextWBar.isoYear,
+                  targetWeek: nextWBar.isoWeek
+                };
+              } else {
+                // Fallback for end of dataset: advance to next calendar week's Monday
+                const nextMonday = new Date(dayDate.getTime() + ((8 - (dayDate.getDay() || 7)) * 86400000));
+                const nextIso = getIsoYearWeek(nextMonday);
+                pendingOrder = {
+                  signalDate: dayDate,
+                  ceiling: Math.round(dayClose * 1.005 * 100) / 100,
+                  refClose: Math.round(dayClose * 100) / 100,
+                  targetYear: nextIso.year,
+                  targetWeek: nextIso.week
+                };
+              }
             }
           }
         }
@@ -579,9 +598,11 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
         const daysElapsed = Math.round((dayDate - prevIdleDate) / 86400000);
         if (daysElapsed > 0) {
           const openInvestedCash = Object.values(activeTranches).reduce((acc, t) => acc + t.investedAmt, 0);
-          const currentTrancheAmount = (totalCapital + cumulativeRealizedProfit) / numParts;
-          const idleCash = Math.max(0.0, (totalCapital + cumulativeRealizedProfit) - openInvestedCash - currentTrancheAmount);
-          dailyInterest = idleCash * (0.05 / 365.0) * daysElapsed;
+          const currentOverallCapital = totalCapital + cumulativeRealizedProfit + totalDividendAccum;
+          const currentTrancheAmount = currentOverallCapital / numParts;
+          const idleCash = Math.max(0.0, currentOverallCapital - openInvestedCash);
+          const eligibleIdle = Math.max(0.0, idleCash - currentTrancheAmount);
+          dailyInterest = eligibleIdle * (0.05 / 365.0) * daysElapsed;
           totalIdleInterestAccum += dailyInterest;
         }
       }
@@ -599,8 +620,9 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
       if (dailyEquity > peakPortfolioEquity) peakPortfolioEquity = dailyEquity;
       const dayDd = ((peakPortfolioEquity - dailyEquity) / peakPortfolioEquity) * 100.0;
 
-      const currentTrancheCap = (totalCapital + cumulativeRealizedProfit) / numParts;
-      const idleNow = Math.max(0.0, (totalCapital + cumulativeRealizedProfit) - openInvestedNow - currentTrancheCap);
+      const currentOverallCap = totalCapital + cumulativeRealizedProfit + totalDividendAccum;
+      const currentTrancheCap = currentOverallCap / numParts;
+      const idleNow = Math.max(0.0, currentOverallCap - openInvestedNow);
 
       dailySnapshots.push({
         date: dayDate,
@@ -657,6 +679,7 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
   dividendEvents.forEach(ev => {
     cashFlows.push({ date: ev.exDate, amount: ev.totalPayout });
   });
+  cashFlows.sort((a, b) => a.date.getTime() - b.date.getTime());
   const xirrPct = calculateXIRR(cashFlows);
 
   const endingOverallCapital = Math.round((totalCapital + totalRealizedProfit) * 100) / 100;
@@ -953,8 +976,9 @@ function calculateXIRR(cashFlows) {
   const hasNeg = cashFlows.some(c => c.amount < 0);
   if (!hasPos || !hasNeg) return 0.0;
 
-  const d0 = cashFlows[0].date.getTime();
+  const d0 = Math.min(...cashFlows.map(c => c.date.getTime()));
   let r = 0.1;
+  let converged = false;
   for (let iter = 0; iter < 100; iter++) {
     let fVal = 0.0;
     let fPrime = 0.0;
@@ -966,21 +990,105 @@ function calculateXIRR(cashFlows) {
     }
     if (Math.abs(fPrime) < 1e-12) break;
     const rNew = r - fVal / fPrime;
-    if (Math.abs(rNew - r) < 1e-6) return Math.round(rNew * 10000) / 100;
+    if (Math.abs(rNew - r) < 1e-6) {
+      r = rNew;
+      converged = true;
+      break;
+    }
     r = rNew;
     if (r <= -0.99) r = -0.9;
   }
-  return Math.round(r * 10000) / 100;
+
+  if (converged) {
+    return Math.round(r * 10000) / 100;
+  }
+
+  // Binary search fallback if Newton-Raphson did not converge
+  let low = -0.99, high = 10.0, mid = 0.0;
+  for (let iter = 0; iter < 100; iter++) {
+    mid = (low + high) / 2.0;
+    let fMid = 0.0, fLow = 0.0;
+    for (let i = 0; i < cashFlows.length; i++) {
+      const yrs = (cashFlows[i].date.getTime() - d0) / (365.25 * 86400000);
+      fMid += cashFlows[i].amount / Math.pow(1.0 + mid, yrs);
+      fLow += cashFlows[i].amount / Math.pow(1.0 + low, yrs);
+    }
+    if (Math.abs(fMid) < 1e-6) break;
+    if ((fLow > 0 && fMid > 0) || (fLow < 0 && fMid < 0)) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return Math.round(mid * 10000) / 100;
 }
 
-function fetchYahooFinanceDailyAndDividends(yfTicker, startDate, endDate) {
+function resolveTicker(tickerRaw) {
+  let s = String(tickerRaw || 'INFY').trim().toUpperCase();
+
+  // US exchange prefixes: NASDAQ:AAPL, NYSE:MSFT, US:TSLA, AMEX:SPY
+  const usMatch = s.match(/^(NASDAQ|NYSE|AMEX|US):\s*([A-Z0-9.\-]+)$/i);
+  if (usMatch) {
+    const sym = usMatch[2].trim().toUpperCase();
+    return { cleanSym: sym, yfTicker: sym, isExplicitUS: true, isExplicitNSE: false };
+  }
+
+  // BSE prefix: BSE:500325, BSE:TCS
+  const bseMatch = s.match(/^BSE:\s*([A-Z0-9.\-]+)$/i);
+  if (bseMatch) {
+    const sym = bseMatch[1].trim().toUpperCase();
+    return { cleanSym: sym, yfTicker: sym.endsWith('.BO') ? sym : `${sym}.BO`, isExplicitUS: false, isExplicitNSE: false };
+  }
+
+  // NSE prefix: NSE:SBIN
+  const nseMatch = s.match(/^NSE:\s*([A-Z0-9.\-]+)$/i);
+  if (nseMatch) {
+    const sym = nseMatch[1].trim().toUpperCase();
+    return { cleanSym: sym, yfTicker: sym.endsWith('.NS') ? sym : `${sym}.NS`, isExplicitUS: false, isExplicitNSE: true };
+  }
+
+  // US suffix e.g. AAPL.US
+  if (s.endsWith('.US')) {
+    const sym = s.replace(/\.US$/i, '');
+    return { cleanSym: sym, yfTicker: sym, isExplicitUS: true, isExplicitNSE: false };
+  }
+
+  // Already has .NS or .BO or ^
+  if (s.endsWith('.NS') || s.endsWith('.BO') || s.startsWith('^')) {
+    const clean = s.replace(/\.(NS|BO)$/i, '');
+    return { cleanSym: clean, yfTicker: s, isExplicitUS: false, isExplicitNSE: s.endsWith('.NS') };
+  }
+
+  // Plain ticker without prefix (e.g. AAPL or INFY):
+  // Default cleanSym to s, yfTicker to s + '.NS' (will auto-fallback to s if .NS has no data)
+  return { cleanSym: s, yfTicker: `${s}.NS`, isExplicitUS: false, isExplicitNSE: false };
+}
+
+function fetchYahooFinanceDailyAndDividends(tickerInfo, startDate, endDate) {
   const startSec = Math.floor((startDate.getTime() - (365 * 86400000)) / 1000);
   const endSec = Math.floor(endDate.getTime() / 1000) + 86400;
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yfTicker)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
 
-  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-  const json = JSON.parse(response.getContentText());
-  const result = json.chart.result[0];
+  const tInfo = (typeof tickerInfo === 'object') ? tickerInfo : resolveTicker(tickerInfo);
+  let yfTicker = tInfo.yfTicker;
+
+  let url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yfTicker)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
+  let response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  let json = null;
+  try { json = JSON.parse(response.getContentText()); } catch (e) {}
+  let result = json && json.chart && json.chart.result && json.chart.result[0];
+
+  // If no data found and ticker ended in .NS, fallback to clean ticker without .NS (US stock fallback)
+  if (!result && yfTicker.endsWith('.NS') && !tInfo.isExplicitNSE) {
+    const fallbackTicker = tInfo.cleanSym;
+    url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(fallbackTicker)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
+    response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    try { json = JSON.parse(response.getContentText()); } catch (e) {}
+    result = json && json.chart && json.chart.result && json.chart.result[0];
+  }
+
+  if (!result) {
+    return { bars: [], dividends: {} };
+  }
 
   const timestamps = result.timestamp || [];
   const quote = result.indicators.quote[0];
@@ -1022,15 +1130,26 @@ function fetchYahooFinanceDailyAndDividends(yfTicker, startDate, endDate) {
   return { bars: bars, dividends: dividends };
 }
 
-function fetchYahooFinanceDividendsOnly(yfTicker, startDate, endDate) {
+function fetchYahooFinanceDividendsOnly(tickerInfo, startDate, endDate) {
   try {
     const startSec = Math.floor((startDate.getTime() - (365 * 86400000)) / 1000);
     const endSec = Math.floor(endDate.getTime() / 1000) + 86400;
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yfTicker)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
 
-    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    const json = JSON.parse(response.getContentText());
-    const result = json.chart && json.chart.result && json.chart.result[0];
+    const tInfo = (typeof tickerInfo === 'object') ? tickerInfo : resolveTicker(tickerInfo);
+    let yfTicker = tInfo.yfTicker;
+
+    let url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yfTicker)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
+    let response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    let json = null;
+    try { json = JSON.parse(response.getContentText()); } catch (e) {}
+    let result = json && json.chart && json.chart.result && json.chart.result[0];
+
+    if (!result && yfTicker.endsWith('.NS') && !tInfo.isExplicitNSE) {
+      url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tInfo.cleanSym)}?period1=${startSec}&period2=${endSec}&interval=1d&events=div`;
+      response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      try { json = JSON.parse(response.getContentText()); } catch (e) {}
+      result = json && json.chart && json.chart.result && json.chart.result[0];
+    }
 
     const endStr = Utilities.formatDate(endDate, "Asia/Kolkata", "yyyy-MM-dd");
     const dividends = {};

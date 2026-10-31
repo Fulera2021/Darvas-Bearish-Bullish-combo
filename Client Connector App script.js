@@ -21,6 +21,18 @@ function onOpen() {
     .addToUi();
 }
 
+function runTest() {
+  runBacktestClient();
+}
+
+function runBacktestFromYahooFinance() {
+  runBacktestClient();
+}
+
+function executeBacktestEngine() {
+  runBacktestClient();
+}
+
 function runBacktestClient() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const inputSheet = ss.getSheetByName('Input - Output');

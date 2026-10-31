@@ -81,11 +81,19 @@ if NIFTY_500:
     UNIVERSES["Nifty 500"] = NIFTY_500
 
 def normalize_symbol(symbol: str) -> str:
-    """Normalize input stock ticker to standard NSE format (e.g. RELIANCE, NSE:RELIANCE -> RELIANCE.NS)."""
+    """Normalize input stock ticker (supports NSE, BSE, NASDAQ, NYSE, AMEX, US)."""
     s = symbol.strip().upper()
-    for prefix in ("NSE:", "BSE:"):
+    for prefix in ("NASDAQ:", "NYSE:", "AMEX:", "US:"):
         if s.startswith(prefix):
-            s = s[len(prefix):].strip()
+            return s[len(prefix):].strip()
+    if s.startswith("BSE:"):
+        clean = s[4:].strip()
+        return clean if clean.endswith(".BO") else f"{clean}.BO"
+    if s.startswith("NSE:"):
+        clean = s[4:].strip()
+        return clean if clean.endswith(".NS") else f"{clean}.NS"
+    if s.endswith(".US"):
+        return s[:-3]
     if s.startswith("^") or s.endswith(".NS") or s.endswith(".BO"):
         return s
     return f"{s}.NS"

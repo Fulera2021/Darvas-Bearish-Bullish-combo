@@ -14,12 +14,36 @@ def fetch_daily_data(symbol: str, start_date: str, end_date: str) -> pd.DataFram
     """
     logger.info(f"Downloading daily data for {symbol} from {start_date} to {end_date}...")
     clean_sym = symbol.strip().upper()
-    for prefix in ("NSE:", "BSE:"):
+    for prefix in ("NASDAQ:", "NYSE:", "AMEX:", "US:"):
         if clean_sym.startswith(prefix):
             clean_sym = clean_sym[len(prefix):].strip()
-    ticker = clean_sym if clean_sym.endswith(".NS") or clean_sym.endswith(".BO") or clean_sym.startswith("^") else f"{clean_sym}.NS"
+            ticker = clean_sym
+            break
+    else:
+        for prefix in ("NSE:", "BSE:"):
+            if clean_sym.startswith(prefix):
+                clean_sym = clean_sym[len(prefix):].strip()
+                break
+        if clean_sym.endswith(".NS") or clean_sym.endswith(".BO") or clean_sym.startswith("^"):
+            ticker = clean_sym
+        else:
+            ticker = f"{clean_sym}.NS"
     
-    df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, progress=False)
+    try:
+        df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, progress=False)
+    except Exception:
+        df = pd.DataFrame()
+
+    # Fallback to US symbol if .NS was appended and returned empty
+    if df.empty and ticker.endswith(".NS"):
+        fallback = ticker[:-3]
+        try:
+            df = yf.download(fallback, start=start_date, end=end_date, auto_adjust=False, progress=False)
+            if not df.empty:
+                ticker = fallback
+        except Exception:
+            pass
+
     if df.empty:
         raise ValueError(f"No price data found for symbol '{symbol}' ({ticker}) between {start_date} and {end_date}.")
     
@@ -49,13 +73,27 @@ def fetch_dividend_data(symbol: str) -> pd.DataFrame:
     Returns DataFrame with columns ['Date', 'Dividend'] where Date is normalized to midnight.
     """
     clean_sym = symbol.strip().upper()
-    for prefix in ("NSE:", "BSE:"):
+    for prefix in ("NASDAQ:", "NYSE:", "AMEX:", "US:"):
         if clean_sym.startswith(prefix):
             clean_sym = clean_sym[len(prefix):].strip()
-    ticker = clean_sym if clean_sym.endswith(".NS") or clean_sym.endswith(".BO") or clean_sym.startswith("^") else f"{clean_sym}.NS"
+            ticker = clean_sym
+            break
+    else:
+        for prefix in ("NSE:", "BSE:"):
+            if clean_sym.startswith(prefix):
+                clean_sym = clean_sym[len(prefix):].strip()
+                break
+        if clean_sym.endswith(".NS") or clean_sym.endswith(".BO") or clean_sym.startswith("^"):
+            ticker = clean_sym
+        else:
+            ticker = f"{clean_sym}.NS"
     try:
         t = yf.Ticker(ticker)
         divs = t.dividends
+        if (divs is None or divs.empty) and ticker.endswith(".NS"):
+            fallback = ticker[:-3]
+            t = yf.Ticker(fallback)
+            divs = t.dividends
         if divs is None or divs.empty:
             return pd.DataFrame(columns=["Date", "Dividend"])
         df = divs.reset_index()
