@@ -32,6 +32,16 @@ app = FastAPI(title="Weekly 20W Darvas Box Backtester", version="1.0.0")
 os.makedirs(STATIC_DIR / "css", exist_ok=True)
 os.makedirs(STATIC_DIR / "js", exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
+
+@app.middleware("http")
+async def add_no_cache_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Initialize SQLite database cache on startup
@@ -218,6 +228,7 @@ async def execute_backtest(req: BacktestRequest):
                     "max_drawdown_pct": round(result.max_drawdown_pct, 2),
                     "avg_holding_days": round(result.avg_holding_days, 1),
                     "ending_overall_capital": round(result.ending_overall_capital, 2),
+                    "ending_net_worth": round(getattr(result, "ending_net_worth", result.initial_capital + result.total_realized_profit + result.unrealized_pnl), 2),
                     "ending_tranche_amount": round(result.ending_tranche_amount, 2)
                 },
                 "trades": trades_json,
@@ -340,6 +351,7 @@ async def execute_backtest(req: BacktestRequest):
                     "completed_trades": p_res.completed_trades,
                     "open_trades": p_res.open_trades,
                     "ending_overall_capital": round(p_res.ending_overall_capital, 2),
+                    "ending_net_worth": round(getattr(p_res, "ending_net_worth", p_res.total_capital + p_res.total_realized_profit + p_res.unrealized_pnl), 2),
                     "ending_tranche_amount": round(p_res.ending_tranche_amount, 2)
                 },
                 "stock_summaries": stock_summaries_json,

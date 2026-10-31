@@ -111,6 +111,7 @@ class BacktestResult:
     idle_capital_interest: float = 0.0
     dividend_income: float = 0.0
     ending_overall_capital: float = 0.0
+    ending_net_worth: float = 0.0
     ending_tranche_amount: float = 0.0
     start_date: str = ""
     end_date: str = ""
@@ -856,9 +857,11 @@ def run_backtest(
 
     if getattr(config, "enable_compounding", True):
         ending_overall_capital = round(config.total_capital + total_realized_profit, 2)
+        ending_net_worth = round(config.total_capital + total_realized_profit + unrealized_pnl, 2)
         ending_tranche_amount = round(ending_overall_capital / float(config.num_parts), 2)
     else:
         ending_overall_capital = round(config.total_capital, 2)
+        ending_net_worth = round(config.total_capital + unrealized_pnl, 2)
         ending_tranche_amount = round(config.tranche_capital, 2)
 
     return BacktestResult(
@@ -884,6 +887,7 @@ def run_backtest(
         idle_capital_interest=total_idle_interest,
         dividend_income=total_div_income,
         ending_overall_capital=ending_overall_capital,
+        ending_net_worth=ending_net_worth,
         ending_tranche_amount=ending_tranche_amount,
         start_date=config.start_date,
         end_date=config.end_date,

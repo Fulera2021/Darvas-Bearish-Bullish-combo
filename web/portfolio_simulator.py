@@ -49,6 +49,7 @@ class PortfolioBacktestResult:
     completed_trades: int = 0
     open_trades: int = 0
     ending_overall_capital: float = 0.0
+    ending_net_worth: float = 0.0
     ending_tranche_amount: float = 0.0
     start_date: str = ""
     end_date: str = ""
@@ -143,6 +144,7 @@ def run_portfolio_universe_simulation(
             completed_trades=0,
             open_trades=0,
             ending_overall_capital=config.total_capital,
+            ending_net_worth=config.total_capital,
             ending_tranche_amount=tranche_capital,
             stock_summaries=[],
             trades=[],
@@ -582,9 +584,11 @@ def run_portfolio_universe_simulation(
 
     if getattr(config, "enable_compounding", True):
         ending_overall_capital = round(config.total_capital + total_realized_profit, 2)
+        ending_net_worth = round(config.total_capital + total_realized_profit + final_unrealized_pnl, 2)
         ending_tranche_amount = round(ending_overall_capital / float(max_active_stocks * config.num_parts), 2)
     else:
         ending_overall_capital = round(config.total_capital, 2)
+        ending_net_worth = round(config.total_capital + final_unrealized_pnl, 2)
         ending_tranche_amount = round(tranche_capital, 2)
 
     return PortfolioBacktestResult(
@@ -606,6 +610,7 @@ def run_portfolio_universe_simulation(
         completed_trades=len(completed_trades),
         open_trades=len(open_trades_list),
         ending_overall_capital=ending_overall_capital,
+        ending_net_worth=ending_net_worth,
         ending_tranche_amount=ending_tranche_amount,
         start_date=config.start_date,
         end_date=config.end_date,

@@ -80,8 +80,8 @@ def export_single_stock_excel(result: BacktestResult) -> io.BytesIO:
         ("Completed Trades", result.completed_trades, NUM_FORMAT_INT),
         ("Open Positions", result.open_trades, NUM_FORMAT_INT),
         ("Max Drawdown %", f"{result.max_drawdown_pct:.2f}%", None),
-        ("Avg Holding Days", f"{result.avg_holding_days:.1f}", None),
-        ("Ending Overall Capital", getattr(result, "ending_overall_capital", result.initial_capital), NUM_FORMAT_DECIMAL),
+        ("Ending Net Worth (If All Sold)", getattr(result, "ending_net_worth", result.initial_capital + result.total_realized_profit + result.unrealized_pnl), NUM_FORMAT_DECIMAL),
+        ("Compounded Capital Base", getattr(result, "ending_overall_capital", result.initial_capital), NUM_FORMAT_DECIMAL),
         ("Ending Tranche Buy Amount", getattr(result, "ending_tranche_amount", 0.0), NUM_FORMAT_DECIMAL),
     ]
 
@@ -364,8 +364,8 @@ def export_portfolio_excel(result: PortfolioBacktestResult) -> io.BytesIO:
         ("Max Drawdown %", f"{result.max_drawdown_pct:.2f}%", None),
         ("Total Trades", result.total_trades, NUM_FORMAT_INT),
         ("Completed Trades", result.completed_trades, NUM_FORMAT_INT),
-        ("Open Positions", result.open_trades, NUM_FORMAT_INT),
-        ("Ending Overall Capital", getattr(result, "ending_overall_capital", result.total_capital), NUM_FORMAT_DECIMAL),
+        ("Ending Net Worth (If All Sold)", getattr(result, "ending_net_worth", result.total_capital + result.total_realized_profit + result.unrealized_pnl), NUM_FORMAT_DECIMAL),
+        ("Compounded Capital Base", getattr(result, "ending_overall_capital", result.total_capital), NUM_FORMAT_DECIMAL),
         ("Ending Tranche Buy Amount", getattr(result, "ending_tranche_amount", 0.0), NUM_FORMAT_DECIMAL),
     ]
 

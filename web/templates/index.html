@@ -3,9 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Darvas Bearish + Bullish Combo — Algorithmic Backtester</title>
   <meta name="description" content="Professional backtesting engine for the 5-Tranche Darvas Bearish Dip-Buying + Bullish Momentum Combo on Indian Equities (NSE).">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261031_02">
 </head>
 <body>
 
@@ -213,8 +216,14 @@
           <div class="kpi-sub">Tranche executions</div>
         </div>
 
+        <div class="kpi-card kpi-purple" id="kpi-card-ending-net-worth">
+          <div class="kpi-title">Ending Net Worth (If All Sold)</div>
+          <div class="kpi-value" id="kpi-ending-net-worth">-</div>
+          <div class="kpi-sub">Capital + Total Portfolio Return</div>
+        </div>
+
         <div class="kpi-card kpi-purple" id="kpi-card-ending-capital">
-          <div class="kpi-title">Ending Overall Capital</div>
+          <div class="kpi-title">Compounded Capital Base</div>
           <div class="kpi-value" id="kpi-ending-capital">-</div>
           <div class="kpi-sub">Capital + Realized Profit</div>
         </div>
@@ -400,6 +409,6 @@
     </section>
   </main>
 
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=20261031_02"></script>
 </body>
 </html>

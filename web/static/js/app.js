@@ -421,6 +421,21 @@ function renderResults(data) {
   document.getElementById('kpi-drawdown').textContent = `${formatNum(sum.max_drawdown_pct)}%`;
   document.getElementById('kpi-trades-count').textContent = `${sum.completed_trades} / ${sum.total_trades}`;
 
+  const endNetWorthEl = document.getElementById('kpi-ending-net-worth');
+  if (endNetWorthEl) {
+    let netWorthVal = 0;
+    if (sum.ending_net_worth !== undefined && sum.ending_net_worth !== null) {
+      netWorthVal = Number(sum.ending_net_worth);
+    } else {
+      const cap = Number(sum.total_capital || 0);
+      const retAmt = (sum.total_portfolio_return_amount !== undefined && sum.total_portfolio_return_amount !== null)
+        ? Number(sum.total_portfolio_return_amount)
+        : (Number(sum.total_realized_profit || 0) + Number(sum.unrealized_pnl || 0));
+      netWorthVal = cap + retAmt;
+    }
+    endNetWorthEl.textContent = formatNum(Math.round(netWorthVal), 0);
+  }
+
   const endCapEl = document.getElementById('kpi-ending-capital');
   if (endCapEl) {
     const endCapVal = sum.ending_overall_capital || (sum.total_capital + (sum.total_realized_profit || 0));

@@ -268,11 +268,40 @@ function executeBacktestEngine(useYahooFinance) {
     // Suppress if formatting inaccessible
   }
 
-  inputSheet.getRange('A9:F9').setValues([[
+  // Row 8 Headers (Columns E to G)
+  inputSheet.getRange('E8').setValue('Ending Net Worth (If All Sold)');
+  inputSheet.getRange('F8').setValue('Compounded Capital Base');
+  inputSheet.getRange('G8').setValue('Ending Tranche Buy Amount');
+
+  inputSheet.getRange('A9:G9').setValues([[
     d.totalPortfolioReturnPct / 100, d.xirrPct / 100, d.maxDrawdownPct / 100,
-    d.tradesRatio, d.endingOverallCapital, d.endingTrancheAmount
+    d.tradesRatio, d.endingNetWorth, d.endingOverallCapital, d.endingTrancheAmount
   ]]);
-  inputSheet.getRange('E9:F9').setNumberFormat('#,##0');
+  inputSheet.getRange('E9:G9').setNumberFormat('#,##0');
+
+  // Ensure E8:G8 and E9:G9 match active theme formatting from D8:D9
+  try {
+    const d8 = inputSheet.getRange('D8');
+    const d9 = inputSheet.getRange('D9');
+    inputSheet.getRange('E8:G8')
+      .setBackground(d8.getBackground())
+      .setFontColor(d8.getFontColor())
+      .setFontWeight('bold')
+      .setFontSize(d8.getFontSize())
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle');
+    inputSheet.getRange('E9:G9')
+      .setBackground(d9.getBackground())
+      .setFontColor(d9.getFontColor())
+      .setFontWeight('bold')
+      .setFontSize(11)
+      .setHorizontalAlignment('right')
+      .setVerticalAlignment('middle')
+      .setNumberFormat('#,##0');
+    inputSheet.getRange('A8:G9').setBorder(true, true, true, true, true, true, d8.getBackground(), SpreadsheetApp.BorderStyle.SOLID);
+  } catch (fmtErr2) {
+    // Suppress if formatting inaccessible
+  }
 
   // Write Detailed Trades to 'Historical Data and Trades'
   const tradeHeaders = [
@@ -833,6 +862,7 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
   const xirrPct = calculateXIRR(cashFlows);
 
   const endingOverallCapital = Math.round((totalCapital + totalRealizedProfit) * 100) / 100;
+  const endingNetWorth = Math.round((totalCapital + totalPortfolioReturnAmt) * 100) / 100;
   const endingTrancheAmount = Math.round((endingOverallCapital / numParts) * 100) / 100;
 
   const tradeRows = allTrades.map(t => [
@@ -926,6 +956,7 @@ function runSimulationEngineCore(dailyBars, dividendMap, cleanSym, totalCapital,
     maxDrawdownPct: maxDrawdownPct,
     tradesRatio: `${closedTrades.length} / ${allTrades.length}`,
     endingOverallCapital: endingOverallCapital,
+    endingNetWorth: endingNetWorth,
     endingTrancheAmount: endingTrancheAmount,
     trades: tradeRows,
     monthly: monthlyRows,
@@ -1358,15 +1389,19 @@ function applyKpiTheme(themeKey) {
   const t = themes[themeKey] || themes.navy;
 
   sheet.getRange('G5').setValue('Current Investment Amount in the Stocks');
+  sheet.getRange('E8').setValue('Ending Net Worth (If All Sold)');
+  sheet.getRange('F8').setValue('Compounded Capital Base');
+  sheet.getRange('G8').setValue('Ending Tranche Buy Amount');
+
   sheet.getRange('A5:G5').setBackground(t.hdrBg).setFontColor(t.hdrColor).setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.getRange('A6:G6').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(12).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('#,##0');
-  sheet.getRange('A8:F8').setBackground(t.hdrBg).setFontColor(t.hdrColor).setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sheet.getRange('A8:G8').setBackground(t.hdrBg).setFontColor(t.hdrColor).setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.getRange('A9:C9').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(12).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('0.00%');
   sheet.getRange('D9').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(11).setHorizontalAlignment('center').setVerticalAlignment('middle');
-  sheet.getRange('E9:F9').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(11).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('#,##0');
+  sheet.getRange('E9:G9').setBackground(t.valBg).setFontColor(t.valColor).setFontWeight('bold').setFontSize(11).setHorizontalAlignment('right').setVerticalAlignment('middle').setNumberFormat('#,##0');
 
   sheet.getRange('A5:G6').setBorder(true, true, true, true, true, true, t.borderColor, SpreadsheetApp.BorderStyle.SOLID);
-  sheet.getRange('A8:F9').setBorder(true, true, true, true, true, true, t.borderColor, SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange('A8:G9').setBorder(true, true, true, true, true, true, t.borderColor, SpreadsheetApp.BorderStyle.SOLID);
 
   sheet.setRowHeight(5, 28);
   sheet.setRowHeight(6, 34);
