@@ -706,14 +706,12 @@ function onEdit(e) {
       }
       destSheet.getRange(targetRow, 5).setValue(signalType).setHorizontalAlignment('right');
 
-      // Clear any inherited cell background color from row above in destSheet
-      // destSheet.getRange(targetRow, 1, 1, 5).setBackground(null);
-
       // Rule 3: After transfer is done, delete its row from source tab
       sheet.deleteRow(editedRow);
 
-      // Refresh checkboxes for remaining rows
+      // Refresh checkboxes for remaining rows in GTT Tracker and destination Current Holdings
       refreshGttCheckboxes(sheet);
+      refreshCurrentHoldingsCheckboxes(destSheet);
 
       ss.toast(`✅ Transferred ${ticker} (Qty: ${numQty}, ₹${numBuyPrice}) to '${GTT_CONFIG.DEST_SHEET_NAME}' (Row ${targetRow}).`, 'Stock Transferred', 5);
       return;
@@ -1104,8 +1102,13 @@ function getFirstEmptyRowInGttTab(gttSheet) {
 
 /**
  * In tab 'Current Holdings', populates checkboxes in Col P (rows 8 onwards)
- * wherever the cell in Col I (Sell Date) is not blank.
- * If Col I is blank, removes any checkbox from Col P.
+ * ONLY for rows that are genuinely eligible for selling:
+ * 1. Column B (Stock Code) must not be empty.
+ * 2. Column I (Sell Date) must contain an actual valid date (Year >= 2020).
+ *    (Rejects whitespace, 0, false, empty strings, and error strings like #N/A).
+ * 3. For Bearish Buy: If CMP is known (>0), verify CMP >= Target Price.
+ *    If CMP is 0 or missing, it cannot be verified as hitting the target price.
+ * If not eligible, completely removes data validation and clears Column P.
  *
  * @param {SpreadsheetApp.Sheet} [holdingsSheet] Optional sheet object.
  */
@@ -1118,22 +1121,77 @@ function refreshCurrentHoldingsCheckboxes(holdingsSheet) {
   if (lastRow < HOLDINGS_CONFIG.DATA_START_ROW) return;
 
   const numRows = lastRow - HOLDINGS_CONFIG.DATA_START_ROW + 1;
-  const colIValues = sheet.getRange(HOLDINGS_CONFIG.DATA_START_ROW, HOLDINGS_CONFIG.SELL_DATE_COL, numRows, 1).getValues();
-  const colPRange = sheet.getRange(HOLDINGS_CONFIG.DATA_START_ROW, HOLDINGS_CONFIG.MOVE_CHK_COL, numRows, 1);
-  const colPValues = colPRange.getValues();
+  // Read Columns B to P (Cols 2 to 16 = 15 columns)
+  // Col B: Ticker (idx 0, col 2)
+  // Col C: Buy Price (idx 1, col 3)
+  // Col D: Buy Qty (idx 2, col 4)
+  // Col E: Buy Type (idx 3, col 5)
+  // Col H: CMP (idx 6, col 8)
+  // Col I: Sell Date (idx 7, col 9)
+  // Col N: Target Price (idx 12, col 14)
+  // Col O: Bullish Exit Signal (idx 13, col 15)
+  // Col P: Move Checkbox (idx 14, col 16)
+  const dataRange = sheet.getRange(HOLDINGS_CONFIG.DATA_START_ROW, 2, numRows, 15);
+  const dataValues = dataRange.getValues();
 
+  const colPRange = sheet.getRange(HOLDINGS_CONFIG.DATA_START_ROW, HOLDINGS_CONFIG.MOVE_CHK_COL, numRows, 1);
   const checkboxValidation = SpreadsheetApp.newDataValidation().requireCheckbox().build();
   const validations = [];
   const newPValues = [];
 
   for (let i = 0; i < numRows; i++) {
-    const valI = colIValues[i][0];
-    const isNotBlank = (valI !== '' && valI !== null && valI !== undefined);
-    const currentVal = colPValues[i][0];
+    const row = dataValues[i];
+    const ticker = String(row[0] || '').trim();
+    const buyType = String(row[3] || '').trim().toLowerCase();
+    const rawCmp = row[6];
+    const cmp = (typeof rawCmp === 'number') ? rawCmp : (parseFloat(rawCmp) || 0);
+    const valI = row[7]; // Sell Date
+    const rawTarget = row[12];
+    const targetPrice = (typeof rawTarget === 'number') ? rawTarget : (parseFloat(rawTarget) || 0);
+    const exitSignal = String(row[13] || '').trim().toLowerCase();
+    const currentP = row[14];
 
-    if (isNotBlank) {
+    // Helper: Verify if valI represents an actual valid Date
+    let hasValidSellDate = false;
+    if (valI instanceof Date && !isNaN(valI.getTime()) && valI.getFullYear() >= 2020) {
+      hasValidSellDate = true;
+    } else if (typeof valI === 'number' && valI >= 43831) {
+      // Date serial number in Google Sheets (43831 is 2020-01-01)
+      hasValidSellDate = true;
+    } else if (typeof valI === 'string') {
+      const trimmed = valI.trim();
+      if (trimmed && trimmed !== '-' && !trimmed.startsWith('#') && trimmed !== '0' && trimmed.toLowerCase() !== 'false') {
+        const d = new Date(trimmed);
+        if (!isNaN(d.getTime()) && d.getFullYear() >= 2020) {
+          hasValidSellDate = true;
+        }
+      }
+    }
+
+    // Determine strict selling eligibility
+    let isEligible = false;
+    if (ticker !== '' && hasValidSellDate) {
+      if (buyType.includes('bearish')) {
+        // Bearish Buy target hit check
+        if (cmp > 0 && targetPrice > 0) {
+          isEligible = (cmp >= targetPrice);
+        } else if (cmp > 0) {
+          isEligible = true;
+        } else {
+          // CMP is missing or 0 - cannot confirm target reached
+          isEligible = false;
+        }
+      } else if (buyType.includes('bullish')) {
+        // Bullish Buy exit signal check
+        isEligible = true;
+      } else {
+        isEligible = true;
+      }
+    }
+
+    if (isEligible) {
       validations.push([checkboxValidation]);
-      newPValues.push([currentVal === true || currentVal === 'TRUE' ? true : false]);
+      newPValues.push([currentP === true || currentP === 'TRUE' ? true : false]);
     } else {
       validations.push([null]);
       newPValues.push(['']);
@@ -2371,8 +2429,8 @@ function processIdleMoneySale(sheet) {
       }
     }
 
-    // 8. Find first empty row after row 3 in 'Idle Money - Sold' and write payloads as raw values
-    var destStartRow = getFirstEmptyRowAfterRow3(soldSheet);
+    // 8. Find first empty row strictly from Row 4 downwards in 'Idle Money - Sold' (never before row 4)
+    var destStartRow = getFirstEmptyRowInIdleMoneySoldTab(soldSheet);
     var requiredRows = (destStartRow + payloads.length - 1) - soldSheet.getMaxRows();
     if (requiredRows > 0) {
       soldSheet.insertRowsAfter(soldSheet.getMaxRows(), requiredRows);
@@ -2423,4 +2481,97 @@ function manualTriggerIdleMoneySale() {
     return;
   }
   processIdleMoneySale(sheet);
+}
+
+/**
+ * Robust matching of two ETF symbols, ignoring case, exchange prefixes, and suffixes.
+ */
+function isMatchingEtfCode(codeA, codeB) {
+  if (!codeA || !codeB) return false;
+  var normalize = function (s) {
+    return String(s)
+      .trim()
+      .toUpperCase()
+      .replace(/^(NSE|BSE|BOM):\s*/i, '')
+      .replace(/\.(NS|BO)$/i, '')
+      .replace(/[\s\-_]/g, '');
+  };
+  return normalize(codeA) === normalize(codeB);
+}
+
+/**
+ * Safely parses any date representation (Date object, string, or number) into a numeric timestamp
+ * for chronological FIFO lot sorting.
+ */
+function parseDateToTimestamp(dateVal) {
+  if (!dateVal) return 0;
+  if (dateVal instanceof Date) {
+    return dateVal.getTime();
+  }
+  if (typeof dateVal === 'number') {
+    return dateVal > 10000000 ? dateVal : (dateVal - 25569) * 86400000;
+  }
+  var str = String(dateVal).trim();
+  var parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.getTime();
+  }
+  // Try DD-MMM-YYYY, DD/MM/YYYY, or DD-MM-YYYY
+  var parts = str.split(/[\/\-\.\s]+/);
+  if (parts.length === 3) {
+    var months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+    var d, m, y;
+    if (parts[0].length === 4) {
+      y = Number(parts[0]);
+      m = Number(parts[1]) - 1;
+      d = Number(parts[2]);
+    } else {
+      d = Number(parts[0]);
+      var mPart = parts[1].toLowerCase().substring(0, 3);
+      m = months[mPart] !== undefined ? months[mPart] : (Number(parts[1]) - 1);
+      y = Number(parts[2]);
+      if (y < 100) y += 2000;
+    }
+    var dt = new Date(y, m, d);
+    if (!isNaN(dt.getTime())) return dt.getTime();
+  }
+  return 0;
+}
+
+/**
+ * Finds the first empty row in 'Idle Money - Sold' strictly from Row 4 downwards.
+ * Never pastes or writes any data before Row 4.
+ */
+function getFirstEmptyRowInIdleMoneySoldTab(sheet) {
+  var startRow = 4;
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < startRow) {
+    sheet.insertRowsAfter(maxRows, startRow - maxRows + 10);
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < startRow) {
+    return startRow;
+  }
+
+  var numRowsToCheck = lastRow - startRow + 1;
+  var values = sheet.getRange(startRow, 1, numRowsToCheck, 2).getValues();
+
+  for (var r = 0; r < values.length; r++) {
+    var colA = values[r][0];
+    var colB = values[r][1];
+    var isBlankA = (colA === '' || colA === null || colA === undefined);
+    var isBlankB = (colB === '' || colB === null || colB === undefined);
+    if (isBlankA && isBlankB) {
+      return startRow + r;
+    }
+  }
+  return lastRow + 1;
+}
+
+/**
+ * Backward compatibility alias
+ */
+function getFirstEmptyRowAfterRow3(sheet) {
+  return getFirstEmptyRowInIdleMoneySoldTab(sheet);
 }
