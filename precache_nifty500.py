@@ -121,7 +121,10 @@ def fetch_nifty500_symbols() -> list:
             logger.warning(f"Could not read local {NIFTY500_JSON_PATH}: {e}")
 
     # Deduplicate, sort, and filter out excluded/dummy symbols
-    symbols = sorted(list(set(s for s in symbols if s not in EXCLUDED_SYMBOLS and s.replace(".NS", "") not in EXCLUDED_SYMBOLS)))
+    from web.universe_data import NIFTY_50, NIFTY_NEXT_50, NIFTY_100, NIFTY_FNO
+    universe_syms = set(NIFTY_50 + NIFTY_NEXT_50 + NIFTY_100 + NIFTY_FNO)
+    symbols = sorted(list((set(symbols) | universe_syms) - set(EXCLUDED_SYMBOLS)))
+    symbols = [s for s in symbols if s.replace(".NS", "") not in EXCLUDED_SYMBOLS]
 
     # Save to json for fast offline reuse
     if symbols and len(symbols) >= 400:

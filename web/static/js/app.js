@@ -73,7 +73,7 @@ const UNIVERSE_MAX_LIMITS = {
   'Nifty 50': 50,
   'Nifty Next 50': 50,
   'Nifty 100': 100,
-  'Nifty F&O': 200
+  'Nifty F&O': 218
 };
 
 function updateUniverseMaxLimit() {

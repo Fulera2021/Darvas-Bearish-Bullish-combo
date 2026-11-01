@@ -115,41 +115,86 @@ def get_cached_daily_data(symbol: str, start_date: str, end_date: str, db_path: 
     df["Date"] = pd.to_datetime(df["Date"])
     return df
 
+def _last_expected_trading_day(dt: pd.Timestamp) -> pd.Timestamp:
+    """Adjust weekend dates (Saturday/Sunday) back to Friday so cache checks don't re-fetch on weekends."""
+    wd = dt.weekday()
+    if wd == 5:  # Saturday -> Friday
+        return dt - pd.Timedelta(days=1)
+    if wd == 6:  # Sunday -> Friday
+        return dt - pd.Timedelta(days=2)
+    return dt
+
 def ensure_symbol_data(symbol: str, start_date: str, end_date: str, db_path: str = DEFAULT_DB_PATH) -> pd.DataFrame:
     """
     Retrieve price data from cache; if cache is missing or covers insufficient range,
-    fetch via yfinance, update cache, and return DataFrame.
+    fetch only the missing delta (or full range if starting earlier), update cache,
+    refresh dividends if new trailing days were added, and return DataFrame.
     """
     norm_symbol = normalize_symbol(symbol)
     cached_df = get_cached_daily_data(norm_symbol, start_date, end_date, db_path)
     
-    # Check if cached data covers required range with minimal trading day density
-    req_start = pd.to_datetime(start_date)
-    req_end = pd.to_datetime(end_date)
+    req_start = pd.to_datetime(start_date).normalize()
+    req_end = pd.to_datetime(end_date).normalize()
+    effective_end = _last_expected_trading_day(req_end)
     
-    needs_download = False
+    # yfinance end parameter is exclusive, so add 1 day when downloading
+    yf_end_str = (req_end + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    
     if cached_df is None or cached_df.empty:
-        needs_download = True
-    else:
-        cached_min = cached_df["Date"].min()
-        cached_max = cached_df["Date"].max()
-        # If cache starts more than 10 calendar days after requested start, or ends before requested end
-        if (cached_min - req_start).days > 10 or cached_max < req_end:
-            needs_download = True
-            
-    if needs_download:
         try:
-            logger.info(f"Downloading {norm_symbol} from yfinance for range {start_date} to {end_date}...")
-            fresh_df = fetch_daily_data(norm_symbol, start_date, end_date)
+            logger.info(f"Downloading full history for {norm_symbol} ({start_date} to {end_date})...")
+            fresh_df = fetch_daily_data(norm_symbol, start_date, yf_end_str)
             save_daily_data_to_cache(norm_symbol, fresh_df, db_path)
-            return fresh_df
+            df_div = fetch_dividend_data(norm_symbol)
+            if not df_div.empty:
+                save_dividends_to_cache(norm_symbol, df_div, db_path)
+            return fresh_df[(fresh_df["Date"] >= req_start) & (fresh_df["Date"] <= req_end)].reset_index(drop=True)
         except Exception as e:
-            if cached_df is not None and not cached_df.empty:
-                logger.warning(f"Could not download fresh data for {norm_symbol} ({e}), falling back to cached data.")
-                return cached_df
             raise
-        
-    return cached_df
+            
+    cached_min = cached_df["Date"].min().normalize()
+    cached_max = cached_df["Date"].max().normalize()
+    
+    # 1. Check if earlier historical data before cached_min is needed
+    # (Skip if stock is a newer IPO already starting at its earliest available date in DB)
+    need_earlier = False
+    if (cached_min - req_start).days > 15:
+        # Check global min date in DB for this symbol
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        cur = conn.cursor()
+        cur.execute("SELECT MIN(date) FROM daily_prices WHERE symbol = ?", (norm_symbol,))
+        row = cur.fetchone()
+        conn.close()
+        db_min = pd.to_datetime(row[0]).normalize() if (row and row[0]) else cached_min
+        if (db_min - req_start).days > 15 and req_start < pd.Timestamp("2019-01-01"):
+            need_earlier = True
+
+    if need_earlier:
+        try:
+            logger.info(f"Downloading earlier history for {norm_symbol} ({start_date} to {cached_min.strftime('%Y-%m-%d')})...")
+            early_end_str = (cached_min + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            early_df = fetch_daily_data(norm_symbol, start_date, early_end_str)
+            save_daily_data_to_cache(norm_symbol, early_df, db_path)
+        except Exception as e:
+            logger.warning(f"Could not download earlier history for {norm_symbol}: {e}")
+
+    # 2. Check if newer trailing data after cached_max is needed (e.g., running test after 1 month)
+    if cached_max < effective_end:
+        delta_start_str = cached_max.strftime("%Y-%m-%d")
+        try:
+            logger.info(f"Incremental update for {norm_symbol}: fetching new bars from {delta_start_str} to {end_date}...")
+            delta_df = fetch_daily_data(norm_symbol, delta_start_str, yf_end_str)
+            if not delta_df.empty:
+                save_daily_data_to_cache(norm_symbol, delta_df, db_path)
+            # Also refresh dividends for newly elapsed period
+            df_div = fetch_dividend_data(norm_symbol)
+            if not df_div.empty:
+                save_dividends_to_cache(norm_symbol, df_div, db_path)
+        except Exception as e:
+            logger.warning(f"Incremental update for {norm_symbol} returned no new bars ({e}); using cached data up to {cached_max.strftime('%Y-%m-%d')}.")
+
+    updated_df = get_cached_daily_data(norm_symbol, start_date, end_date, db_path)
+    return updated_df if (updated_df is not None and not updated_df.empty) else cached_df
 
 def save_dividends_to_cache(symbol: str, df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH):
     """Upsert historical dividend records into SQLite."""
