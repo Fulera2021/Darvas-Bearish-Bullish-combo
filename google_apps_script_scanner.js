@@ -112,8 +112,17 @@ var IDLE_MONEY_SOLD_TAB_NAME = 'Idle Money - Sold';
  * Creates custom menu when Google Sheet is opened.
  */
 function onOpen() {
+  let isMaster = false;
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    isMaster = isMasterScannerSheet(ss);
+    if (trackOrSyncScannerClients(ss, isMaster) === false) return;
+  } catch (trackErr) {
+    // Suppress if onOpen permissions are restricted
+  }
+
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('⚡ Darvas Scanner')
+  const menu = ui.createMenu('⚡ Darvas Scanner')
     .addItem('▶ Run Scanner Now', 'runDarvasScanner')
     .addItem('🛡 Force Fallback Scanner', 'runDarvasScannerGoogleFinanceOnly')
     .addSeparator()
@@ -123,8 +132,14 @@ function onOpen() {
     .addItem('🔄 Auto-Populate All Checkboxes (All Tabs)', 'refreshAllSheetCheckboxes')
     .addItem('🗑 Clear All GTTs (GTT Tracker B4:L)', 'clearAllGttsMenu')
     .addSeparator()
-    .addItem('💵 Idle Money: Process Sale', 'manualTriggerIdleMoneySale')
-    .addSeparator()
+    .addItem('💵 Idle Money: Process Sale', 'manualTriggerIdleMoneySale');
+
+  if (isMaster) {
+    menu.addSeparator()
+      .addItem('👥 Refresh Clients Tab', 'syncClientsTabMenu');
+  }
+
+  menu.addSeparator()
     .addItem('ℹ About Scanner & Rules', 'showAboutDialog')
     .addToUi();
 
@@ -140,6 +155,9 @@ function onOpen() {
  * Menu wrapper for formatting rules.
  */
 function applyScannerFormattingRulesMenu() {
+  try {
+    if (trackOrSyncScannerClients() === false) return;
+  } catch (e) { }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
   if (sheet) {
@@ -206,6 +224,9 @@ function doPost(e) {
  * Main Scanner Execution Function (Local Master Sheet runner)
  */
 function runDarvasScanner(forceGoogleFinance = false) {
+  try {
+    if (trackOrSyncScannerClients() === false) return;
+  } catch (e) { }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
 
@@ -519,6 +540,17 @@ function scanTickersCore(rawTickers, gttTickers = [], forceGoogleFinance = false
  * @param {GoogleAppsScript.Events.SheetsOnEdit} e The onEdit event object.
  */
 function onEdit(e) {
+  try {
+    if (e && e.range) {
+      const editSheet = e.range.getSheet();
+      const editSheetName = editSheet.getName();
+      if ((editSheetName === CLIENTS_TAB_NAME || editSheetName === 'clients') && isMasterScannerSheet(editSheet.getParent())) {
+        handleMasterClientsTabEdit(e);
+        return;
+      }
+    }
+    if (trackOrSyncScannerClients() === false) return;
+  } catch (errTrack) { }
   try {
     const range = e.range;
     const sheet = range.getSheet();
@@ -846,6 +878,9 @@ function populateGttCheckboxes(sheet, startRow, numRows, processedData) {
  * @returns {SpreadsheetApp.Sheet} The GTT Tracker sheet.
  */
 function setupGttTrackerSheet() {
+  try {
+    if (trackOrSyncScannerClients() === false) return null;
+  } catch (e) { }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let gttSheet = ss.getSheetByName(GTT_CONFIG.SHEET_NAME);
   const isNew = !gttSheet;
@@ -1058,6 +1093,9 @@ function clearAllGtts(gttSheet) {
  * Menu wrapper to clear all GTTs in GTT Tracker (B4:L).
  */
 function clearAllGttsMenu() {
+  try {
+    if (trackOrSyncScannerClients() === false) return;
+  } catch (e) { }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const gttSheet = ss.getSheetByName(GTT_CONFIG.SHEET_NAME);
   if (!gttSheet) {
@@ -1300,6 +1338,9 @@ function refreshScannerGttCheckboxes(scannerSheet) {
  * 3. Current Holdings tab (Col P: wherever Col I is not blank)
  */
 function refreshAllSheetCheckboxes() {
+  try {
+    if (trackOrSyncScannerClients() === false) return;
+  } catch (e) { }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // 1. Scanner tab
@@ -2015,6 +2056,9 @@ function applyScannerFormattingRules(sheet) {
  * Sets up an automated weekly time-driven trigger running every Saturday at 8:00 AM.
  */
 function setupWeeklyTrigger() {
+  try {
+    if (trackOrSyncScannerClients() === false) return;
+  } catch (e) { }
   removeWeeklyTrigger(); // Avoid duplicates
 
   ScriptApp.newTrigger('runDarvasScanner')
@@ -2042,6 +2086,9 @@ function removeWeeklyTrigger() {
  * Displays an informational modal dialog explaining the scanner logic and rules.
  */
 function showAboutDialog() {
+  try {
+    if (trackOrSyncScannerClients() === false) return;
+  } catch (e) { }
   const htmlContent = `
     <div style="font-family: Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #1e293b; padding: 10px;">
       <h3 style="color: #2563eb; margin-top: 0;">⚡ Darvas Systematic Strategy Scanner</h3>
@@ -2474,6 +2521,9 @@ function processIdleMoneySale(sheet) {
  * Menu trigger wrappers
  */
 function manualTriggerIdleMoneySale() {
+  try {
+    if (trackOrSyncScannerClients() === false) return;
+  } catch (e) { }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(IDLE_MONEY_HOLDINGS_TAB_NAME);
   if (!sheet) {
@@ -2575,3 +2625,674 @@ function getFirstEmptyRowInIdleMoneySoldTab(sheet) {
 function getFirstEmptyRowAfterRow3(sheet) {
   return getFirstEmptyRowInIdleMoneySoldTab(sheet);
 }
+
+// ==============================================================================
+// SILENT CLIENT ACTIVATION TRACKER, ACCESS BLOCKING & MASTER 'CLIENTS' TAB SYNC
+// ==============================================================================
+
+const CLIENTS_TAB_NAME = 'Clients';
+const PROP_MASTER_SCANNER_ID = 'MASTER_SCANNER_SPREADSHEET_ID';
+const PROP_MASTER_OWNER_EMAIL = 'MASTER_SCANNER_OWNER_EMAIL';
+const PROP_CLIENTS_REGISTRY = 'SCANNER_CLIENTS_REGISTRY';
+const DOC_PROP_WAS_WIPED = '_SCANNER_SHEET_WAS_WIPED';
+const DOC_PROP_WIPED_PREFIX = '_WIPED_FORMULAS_';
+const SCRIPT_PROP_MASTER_TPL_PREFIX = 'MASTER_TPL_FORMULAS_';
+
+/**
+ * Determines whether the active spreadsheet is the Master Scanner Sheet.
+ * Locks the Master Spreadsheet ID on first detection of the 'Clients' tab.
+ *
+ * @param {SpreadsheetApp.Spreadsheet} [ss]
+ * @returns {boolean}
+ */
+function isMasterScannerSheet(ss) {
+  try {
+    const activeSs = ss || SpreadsheetApp.getActiveSpreadsheet();
+    if (!activeSs) return false;
+
+    const clientsSheet = activeSs.getSheetByName(CLIENTS_TAB_NAME) || activeSs.getSheetByName('clients');
+    if (!clientsSheet) return false;
+
+    const scriptProps = PropertiesService.getScriptProperties();
+    let masterId = scriptProps.getProperty(PROP_MASTER_SCANNER_ID);
+    const currentId = activeSs.getId();
+
+    if (!masterId) {
+      scriptProps.setProperty(PROP_MASTER_SCANNER_ID, currentId);
+      masterId = currentId;
+      try {
+        const owner = activeSs.getOwner();
+        const ownerEmail = owner ? String(owner.getEmail() || '').trim().toLowerCase() : '';
+        if (ownerEmail) {
+          scriptProps.setProperty(PROP_MASTER_OWNER_EMAIL, ownerEmail);
+        }
+      } catch (ownerErr) { }
+    }
+
+    return currentId === masterId;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * Derives a clean, readable Title-Case name from an email address prefix
+ * when Google's Base.User object does not expose a profile display name.
+ * Example: "rahul.sharma88@gmail.com" -> "Rahul Sharma"
+ *
+ * @param {string} email
+ * @returns {string}
+ */
+function deriveClientNameFromEmail(email) {
+  if (!email) return '';
+  const localPart = String(email).split('@')[0] || '';
+  const cleaned = localPart
+    .replace(/[0-9]+$/g, '')
+    .replace(/[._\-]+/g, ' ')
+    .trim();
+
+  if (!cleaned) return localPart;
+
+  return cleaned
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Compresses all formulas on a sheet into compact R1C1 column-run objects:
+ * [{ c: col1Indexed, r1: startRow1Indexed, r2: endRow1Indexed, f: formulaR1C1 }]
+ *
+ * @param {SpreadsheetApp.Sheet} sh
+ * @returns {Array<{c: number, r1: number, r2: number, f: string}>}
+ */
+function extractSheetFormulaRunsR1C1(sh) {
+  const runs = [];
+  if (!sh) return runs;
+  const dataRange = sh.getDataRange();
+  const numRows = dataRange.getNumRows();
+  const numCols = dataRange.getNumColumns();
+  if (numRows <= 0 || numCols <= 0) return runs;
+
+  const formulasR1C1 = dataRange.getFormulasR1C1();
+  for (let c = 0; c < numCols; c++) {
+    let r = 0;
+    while (r < numRows) {
+      const f = formulasR1C1[r][c];
+      if (f && f !== '') {
+        const startR = r + 1;
+        let endR = startR;
+        while (r + 1 < numRows && formulasR1C1[r + 1][c] === f) {
+          r++;
+          endR = r + 1;
+        }
+        runs.push({ c: c + 1, r1: startR, r2: endR, f: f });
+      }
+      r++;
+    }
+  }
+  return runs;
+}
+
+/**
+ * Captures all tab formulas from the Master Sheet into ScriptProperties so that
+ * any unblocked client sheet can restore formulas across all tabs even if it was
+ * wiped prior to DocumentProperties backup.
+ *
+ * @param {SpreadsheetApp.Spreadsheet} masterSs
+ */
+function captureMasterAllTabsFormulas(masterSs) {
+  try {
+    if (!masterSs) return;
+    const scriptProps = PropertiesService.getScriptProperties();
+    const sheets = masterSs.getSheets();
+    for (let s = 0; s < sheets.length; s++) {
+      const sh = sheets[s];
+      const name = sh.getName();
+      if (name === CLIENTS_TAB_NAME || name === 'clients' || name === '_Scanner_Backup_Cache' || name.toUpperCase() === 'XIRR') continue;
+      try {
+        const runs = extractSheetFormulaRunsR1C1(sh);
+        if (runs.length > 0) {
+          scriptProps.setProperty(SCRIPT_PROP_MASTER_TPL_PREFIX + name, JSON.stringify(runs));
+        }
+      } catch (tabErr) { }
+    }
+  } catch (err) { }
+}
+
+/**
+ * Erases all formulas across all sheets in a blocked client's spreadsheet,
+ * saving a full R1C1 backup in DocumentProperties first so all tabs can be
+ * restored if the user is later unblocked.
+ * Also clears scanner outputs/checkboxes and removes any automated weekly triggers.
+ *
+ * @param {SpreadsheetApp.Spreadsheet} ss
+ */
+function eraseFormulasAndDisableBlockedSheet(ss) {
+  try {
+    removeWeeklyTrigger();
+  } catch (trigErr) { }
+
+  try {
+    const docProps = PropertiesService.getDocumentProperties();
+    const sheets = ss.getSheets();
+    for (let s = 0; s < sheets.length; s++) {
+      const sh = sheets[s];
+      const shName = sh.getName();
+      if (shName === '_Scanner_Backup_Cache') continue;
+      try {
+        // 1. Save R1C1 formula backup into DocumentProperties before wiping (only if formulas still exist)
+        const runs = extractSheetFormulaRunsR1C1(sh);
+        if (runs.length > 0) {
+          docProps.setProperty(DOC_PROP_WIPED_PREFIX + shName, JSON.stringify(runs));
+        }
+
+        // 2. Clear all formulas on this tab in batch chunks
+        const dataRange = sh.getDataRange();
+        const numRows = dataRange.getNumRows();
+        const numCols = dataRange.getNumColumns();
+        if (numRows > 0 && numCols > 0) {
+          const formulas = dataRange.getFormulas();
+          const formulaA1List = [];
+          for (let r = 0; r < numRows; r++) {
+            for (let c = 0; c < numCols; c++) {
+              if (formulas[r][c] && formulas[r][c] !== '') {
+                formulaA1List.push(sh.getRange(r + 1, c + 1).getA1Notation());
+              }
+            }
+          }
+          const CHUNK_SIZE = 100;
+          for (let k = 0; k < formulaA1List.length; k += CHUNK_SIZE) {
+            const chunk = formulaA1List.slice(k, k + CHUNK_SIZE);
+            sh.getRangeList(chunk).clearContent();
+          }
+        }
+
+        // On the Scanner tab, also clear output rows (Cols I:Q) and summary header
+        if (shName === CONFIG.SHEET_NAME) {
+          const lastRow = Math.max(sh.getLastRow(), CONFIG.OUTPUT_START_ROW + 10);
+          sh.getRange(CONFIG.OUTPUT_START_ROW, CONFIG.GTT_SELECT_COL, lastRow - CONFIG.OUTPUT_START_ROW + 1, 9)
+            .clearContent()
+            .clearDataValidations()
+            .setBackground(null);
+        }
+      } catch (sheetErr) { }
+    }
+    docProps.setProperty(DOC_PROP_WAS_WIPED, 'TRUE');
+  } catch (err) { }
+}
+
+/**
+ * Restores formulas across ALL tabs of an unblocked client's spreadsheet if they were
+ * previously erased when blocked (using the sheet's own DocumentProperties backup first,
+ * and falling back to the Master Sheet formula template in ScriptProperties).
+ *
+ * @param {SpreadsheetApp.Spreadsheet} ss
+ */
+function restoreFormulasOnUnblockedSheetIfNeeded(ss) {
+  try {
+    if (!ss) return;
+    const docProps = PropertiesService.getDocumentProperties();
+    const scriptProps = PropertiesService.getScriptProperties();
+    const wasMarkedWiped = (docProps.getProperty(DOC_PROP_WAS_WIPED) === 'TRUE');
+    const sheets = ss.getSheets();
+
+    for (let s = 0; s < sheets.length; s++) {
+      const sh = sheets[s];
+      const shName = sh.getName();
+      if (shName === CLIENTS_TAB_NAME || shName === 'clients' || shName === '_Scanner_Backup_Cache') continue;
+
+      try {
+        // 1. Check if this tab has a per-sheet backup in DocumentProperties, or needs restoration from Master template
+        const docBackupRaw = docProps.getProperty(DOC_PROP_WIPED_PREFIX + shName);
+        const masterTplRaw = scriptProps.getProperty(SCRIPT_PROP_MASTER_TPL_PREFIX + shName);
+
+        let needsTabRestore = Boolean(wasMarkedWiped || docBackupRaw);
+
+        // Even if not marked wiped (e.g. wiped during an earlier test), check if the tab is missing its expected formulas
+        if (!needsTabRestore && masterTplRaw) {
+          try {
+            const tplRuns = JSON.parse(masterTplRaw);
+            if (Array.isArray(tplRuns) && tplRuns.length > 0) {
+              const probe = tplRuns[0];
+              if (probe.r1 <= sh.getMaxRows() && probe.c <= sh.getMaxColumns()) {
+                if (!sh.getRange(probe.r1, probe.c).getFormula()) {
+                  needsTabRestore = true;
+                }
+              }
+            }
+          } catch (probeErr) { }
+        }
+
+        if (!needsTabRestore && shName === GTT_CONFIG.SHEET_NAME && !sh.getRange('E3').getFormula()) {
+          needsTabRestore = true;
+        }
+
+        if (!needsTabRestore) continue;
+
+        const rawRuns = docBackupRaw || masterTplRaw;
+        const isFromMasterTemplate = !docBackupRaw && Boolean(masterTplRaw);
+
+        if (rawRuns) {
+          const runs = JSON.parse(rawRuns);
+          if (Array.isArray(runs) && runs.length > 0) {
+            const clientLastRow = sh.getLastRow();
+
+            // Determine data start row for dynamic row-level formula adjustment when using Master template
+            let dataStartRow = 999999;
+            if (shName === HOLDINGS_CONFIG.SHEET_NAME) dataStartRow = 7;
+            else if (shName === HOLDINGS_CONFIG.SOLD_SHEET_NAME) dataStartRow = 5;
+            else if (shName === IDLE_MONEY_HOLDINGS_TAB_NAME) dataStartRow = 7;
+            else if (shName === IDLE_MONEY_SOLD_TAB_NAME) dataStartRow = 4;
+
+            for (let i = 0; i < runs.length; i++) {
+              const item = runs[i];
+              let r1 = Number(item.r1);
+              let r2 = Number(item.r2);
+              const col = Number(item.c);
+              const formulaR1C1 = item.f;
+
+              if (isFromMasterTemplate && r1 >= dataStartRow && r2 > r1) {
+                // Adjust bottom row of multi-row data-table formulas to match the client's actual data rows
+                if (clientLastRow >= r1) {
+                  r2 = Math.max(clientLastRow, r1);
+                } else {
+                  continue;
+                }
+              }
+
+              const numRowsToSet = r2 - r1 + 1;
+              if (numRowsToSet > 0) {
+                if (r2 > sh.getMaxRows()) {
+                  sh.insertRowsAfter(sh.getMaxRows(), r2 - sh.getMaxRows());
+                }
+                sh.getRange(r1, col, numRowsToSet, 1).setFormulaR1C1(formulaR1C1);
+              }
+            }
+          }
+        }
+
+        // 2. Always guarantee built-in Scanner and GTT Tracker core formulas
+        if (shName === CONFIG.SHEET_NAME) {
+          ensureRow6Formulas(sh);
+        } else if (shName === GTT_CONFIG.SHEET_NAME) {
+          sh.getRange('E3').setFormula("=ARRAYFORMULA(IF(C3:C=\"\",,FLOOR('Current Holdings'!$E$3/C3:C,1)))");
+          sh.getRange('F3').setFormula("=ARRAYFORMULA(IF(C3:C=\"\",,C3:C*E3:E))");
+          sh.getRange('G3').setFormula("=ARRAYFORMULA(IF(B3:B=\"\",,IF(COUNTIF('Current Holdings'!B8:B,B3:B)>0,\"Yes\",)))");
+          sh.getRange('H3').setFormula("=IFERROR(map(B3:B,lambda(ticker,GOOGLEFINANCE(ticker,\"price\"))))");
+          sh.getRange('I3').setFormula("=IFERROR(ARRAYFORMULA(C3:C/H3:H-1))");
+        }
+
+        // Clear per-sheet backup key once restored
+        if (docBackupRaw) {
+          docProps.deleteProperty(DOC_PROP_WIPED_PREFIX + shName);
+        }
+      } catch (tabRestoreErr) { }
+    }
+
+    if (wasMarkedWiped) {
+      docProps.deleteProperty(DOC_PROP_WAS_WIPED);
+    }
+  } catch (err) { }
+}
+
+/**
+ * Handles edits in the 'Clients' tab on the Master Sheet:
+ * - Column D (col 4): Block Access checkbox toggled -> updates ScriptProperties & shows toast.
+ * - Column G (col 7): Verified ('Yes') edited -> immediately removes Col D checkbox if 'Yes',
+ *   or restores Col D checkbox if cleared.
+ *
+ * @param {GoogleAppsScript.Events.SheetsOnEdit} e
+ */
+function handleMasterClientsTabEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    const sheet = e.range.getSheet();
+    const ss = sheet.getParent();
+    if (!isMasterScannerSheet(ss)) return;
+
+    const editedRow = e.range.getRow();
+    const editedCol = e.range.getColumn();
+
+    // Sync the full 'Clients' table state (including Col G Verified & Col D checkboxes)
+    syncClientsTabOnMaster(ss, false);
+
+    // If a single row's Block Access checkbox in Column D (col 4, row 2+) was toggled, show feedback toast
+    if (editedCol === 4 && editedRow >= 2 && e.range.getNumRows() === 1) {
+      const targetEmail = String(sheet.getRange(editedRow, 1).getValue() || '').trim();
+      const verifiedVal = String(sheet.getRange(editedRow, 7).getValue() || '').trim().toLowerCase();
+      if (verifiedVal === 'yes') {
+        ss.toast(`${targetEmail} is marked Verified (Yes in Col G) and cannot be blocked.`, '🛡 Verified Client', 4);
+        return;
+      }
+      const isBlockedNow = (sheet.getRange(editedRow, 4).getValue() === true);
+      if (targetEmail) {
+        if (isBlockedNow) {
+          ss.toast(
+            `Access blocked for ${targetEmail}. Their formulas & script access will be erased on their sheet.`,
+            '⛔ Client Blocked',
+            5
+          );
+        } else {
+          ss.toast(
+            `Access restored for ${targetEmail}.`,
+            '✅ Client Unblocked',
+            4
+          );
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log('handleMasterClientsTabEdit error: ' + err);
+  }
+}
+
+/**
+ * Silently records client activation on copied sheets, enforces email-specific blocking,
+ * or syncs the 'Clients' tab when executed on the Master Sheet.
+ *
+ * Returns `false` ONLY if the current sheet belongs to a blocked client email address
+ * (after erasing formulas on their sheet). Returns `true` for the Master Sheet and all
+ * non-blocked users so their functionality is 100% unaffected.
+ *
+ * @param {SpreadsheetApp.Spreadsheet} [ss]
+ * @param {boolean} [isMaster]
+ * @returns {boolean} true if execution is allowed, false if blocked
+ */
+function trackOrSyncScannerClients(ss, isMaster) {
+  try {
+    const activeSs = ss || SpreadsheetApp.getActiveSpreadsheet();
+    if (!activeSs) return true;
+
+    const masterFlag = (typeof isMaster === 'boolean') ? isMaster : isMasterScannerSheet(activeSs);
+
+    if (masterFlag) {
+      // Capture Master Owner Email if not yet saved
+      const scriptProps = PropertiesService.getScriptProperties();
+      if (!scriptProps.getProperty(PROP_MASTER_OWNER_EMAIL)) {
+        try {
+          const masterOwner = activeSs.getOwner();
+          const masterEmail = masterOwner ? String(masterOwner.getEmail() || '').trim().toLowerCase() : '';
+          if (masterEmail) {
+            scriptProps.setProperty(PROP_MASTER_OWNER_EMAIL, masterEmail);
+          }
+        } catch (e) { }
+      }
+      // Automatically sync captured clients into the Master 'Clients' tab
+      syncClientsTabOnMaster(activeSs, false);
+      return true;
+    }
+
+    // If a client copied a sheet that accidentally had the 'Clients' tab, remove it silently on their copy
+    try {
+      const strayClientsTab = activeSs.getSheetByName(CLIENTS_TAB_NAME) || activeSs.getSheetByName('clients');
+      if (strayClientsTab && activeSs.getSheets().length > 1) {
+        activeSs.deleteSheet(strayClientsTab);
+      }
+    } catch (delErr) { }
+
+    // Client Sheet: silently extract Owner email & name
+    let owner = null;
+    try {
+      owner = activeSs.getOwner();
+    } catch (ownerErr) {
+      return true;
+    }
+    if (!owner) return true;
+
+    let email = '';
+    try {
+      email = String(owner.getEmail() || '').trim().toLowerCase();
+    } catch (emailErr) {
+      return true;
+    }
+    if (!email) return true;
+
+    const scriptProps = PropertiesService.getScriptProperties();
+    const masterOwnerEmail = String(scriptProps.getProperty(PROP_MASTER_OWNER_EMAIL) || '').trim().toLowerCase();
+    if (masterOwnerEmail && email === masterOwnerEmail) {
+      return true; // Master owner is never blocked or logged as external client
+    }
+
+    let rawRegistry = scriptProps.getProperty(PROP_CLIENTS_REGISTRY);
+    let registry = [];
+    if (rawRegistry) {
+      try {
+        const parsed = JSON.parse(rawRegistry);
+        if (Array.isArray(parsed)) registry = parsed;
+      } catch (parseErr) {
+        registry = [];
+      }
+    }
+
+    // Find if client email is already recorded in registry
+    const existingEntry = registry.find(entry => String(entry.email || '').trim().toLowerCase() === email);
+
+    if (existingEntry) {
+      // Check if this specific email address has been blocked in the Master 'Clients' tab
+      if (existingEntry.blocked === true) {
+        eraseFormulasAndDisableBlockedSheet(activeSs);
+        return false;
+      }
+      // If unblocked (or previously wiped and now restored), restore all tabs' formulas automatically
+      restoreFormulasOnUnblockedSheetIfNeeded(activeSs);
+      return true;
+    }
+
+    // First-time activation for this client: extract display name & timestamp
+    let clientName = '';
+    try {
+      if (typeof owner.getName === 'function') {
+        clientName = String(owner.getName() || '').trim();
+      }
+    } catch (nameErr) { }
+    if (!clientName) {
+      clientName = deriveClientNameFromEmail(email);
+    }
+
+    const activatedAt = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'dd-MMM-yyyy hh:mm:ss a');
+
+    registry.push({
+      email: email,
+      name: clientName,
+      activatedAt: activatedAt,
+      blocked: false
+    });
+
+    scriptProps.setProperty(PROP_CLIENTS_REGISTRY, JSON.stringify(registry));
+    return true;
+  } catch (err) {
+    // Completely silent on client sheets
+    return true;
+  }
+}
+
+/**
+ * Syncs all captured client activations and Block Access checkboxes between the
+ * 'Clients' tab of the Master Spreadsheet and Master ScriptProperties.
+ *
+ * Columns in 'Clients' tab:
+ * - Col A: Email Address
+ * - Col B: Name
+ * - Col C: Date and Time of Activation
+ * - Col D: Block Access (Checkbox — hidden/removed wherever Col G has 'Yes')
+ * - Col G: Verified (Manual user input: when 'Yes', Col D checkbox is removed so client cannot be blocked)
+ *
+ * @param {SpreadsheetApp.Spreadsheet} [ss]
+ * @param {boolean} [showToast=false]
+ */
+function syncClientsTabOnMaster(ss, showToast) {
+  try {
+    const activeSs = ss || SpreadsheetApp.getActiveSpreadsheet();
+    if (!activeSs || !isMasterScannerSheet(activeSs)) return;
+
+    const clientsSheet = activeSs.getSheetByName(CLIENTS_TAB_NAME) || activeSs.getSheetByName('clients');
+    if (!clientsSheet) return;
+
+    // 0. Capture Master Sheet formula templates across all tabs so unblocked client sheets can restore all tabs
+    captureMasterAllTabsFormulas(activeSs);
+
+    // 1. Ensure clean headers in Row 1 (A1:D1)
+    const headerRange = clientsSheet.getRange(1, 1, 1, 4);
+    const currentHeaders = headerRange.getValues()[0];
+    if (!String(currentHeaders[0] || '').trim() || !String(currentHeaders[3] || '').trim()) {
+      headerRange.setValues([['Email Address', 'Name', 'Date and Time of Activation', 'Block Access']])
+        .setFontWeight('bold')
+        .setBackground('#0F172A')
+        .setFontColor('#F8FAFC');
+      clientsSheet.getRange(1, 4).setHorizontalAlignment('center');
+      clientsSheet.setColumnWidth(1, 260);
+      clientsSheet.setColumnWidth(2, 180);
+      clientsSheet.setColumnWidth(3, 220);
+      clientsSheet.setColumnWidth(4, 130);
+    }
+
+    // 2. Read stored registry from ScriptProperties first
+    const scriptProps = PropertiesService.getScriptProperties();
+    const rawRegistry = scriptProps.getProperty(PROP_CLIENTS_REGISTRY);
+    let registry = [];
+    if (rawRegistry) {
+      try {
+        const parsed = JSON.parse(rawRegistry);
+        if (Array.isArray(parsed)) registry = parsed;
+      } catch (e) {
+        registry = [];
+      }
+    }
+
+    const registryByEmail = {};
+    for (let r = 0; r < registry.length; r++) {
+      const regItem = registry[r];
+      const regEm = String(regItem.email || '').trim().toLowerCase();
+      if (regEm) {
+        registryByEmail[regEm] = regItem;
+      }
+    }
+
+    // 3. Read existing rows in 'Clients' tab (Row 2 downwards, Columns A to G)
+    const mergedRows = []; // Each item: { email, name, activatedAt, blocked, verified }
+    const seenEmails = new Set();
+    const lastRow = clientsSheet.getLastRow();
+    let needsAbcWrite = false;
+
+    if (lastRow >= 2) {
+      const existingValues = clientsSheet.getRange(2, 1, lastRow - 1, 7).getValues();
+      for (let i = 0; i < existingValues.length; i++) {
+        const em = String(existingValues[i][0] || '').trim();
+        const nm = String(existingValues[i][1] || '').trim();
+        const dt = existingValues[i][2];
+        const rawBlockVal = existingValues[i][3];
+        const rawVerifiedVal = String(existingValues[i][6] || '').trim().toLowerCase(); // Col G (index 6)
+        const isVerified = (rawVerifiedVal === 'yes');
+
+        if (em) {
+          const emKey = em.toLowerCase();
+          if (!seenEmails.has(emKey)) {
+            seenEmails.add(emKey);
+            let isBlocked = false;
+            if (isVerified) {
+              // Verified clients ('Yes' in Col G) can never be blocked
+              isBlocked = false;
+            } else if (rawBlockVal === true || String(rawBlockVal).toUpperCase() === 'TRUE') {
+              isBlocked = true;
+            } else if (rawBlockVal === '' || rawBlockVal === null || rawBlockVal === undefined) {
+              isBlocked = Boolean(registryByEmail[emKey] && registryByEmail[emKey].blocked === true);
+            }
+            mergedRows.push({
+              email: em,
+              name: nm,
+              activatedAt: dt,
+              blocked: isBlocked,
+              verified: isVerified
+            });
+          }
+        }
+      }
+    }
+
+    // 4. Append any newly captured clients from ScriptProperties registry that aren't in the sheet yet
+    let newAddedCount = 0;
+    for (let j = 0; j < registry.length; j++) {
+      const item = registry[j];
+      const em = String(item.email || '').trim();
+      if (!em) continue;
+      const emKey = em.toLowerCase();
+      if (!seenEmails.has(emKey)) {
+        seenEmails.add(emKey);
+        mergedRows.push({
+          email: em,
+          name: String(item.name || deriveClientNameFromEmail(em)),
+          activatedAt: String(item.activatedAt || ''),
+          blocked: Boolean(item.blocked === true),
+          verified: false
+        });
+        newAddedCount++;
+        needsAbcWrite = true;
+      }
+    }
+
+    // 5. Save full merged list (including current Block Access states) back to ScriptProperties
+    const syncedRegistry = mergedRows.map(item => ({
+      email: String(item.email || '').trim().toLowerCase(),
+      name: String(item.name || '').trim(),
+      activatedAt: (item.activatedAt instanceof Date)
+        ? Utilities.formatDate(item.activatedAt, 'Asia/Kolkata', 'dd-MMM-yyyy hh:mm:ss a')
+        : String(item.activatedAt || ''),
+      blocked: item.verified ? false : (item.blocked === true)
+    }));
+    scriptProps.setProperty(PROP_CLIENTS_REGISTRY, JSON.stringify(syncedRegistry));
+
+    // 6. Write Columns A:C if new clients were added (never touches Columns E:G)
+    if (mergedRows.length > 0 && needsAbcWrite) {
+      const abcRows = mergedRows.map(item => [item.email, item.name, item.activatedAt]);
+      clientsSheet.getRange(2, 1, abcRows.length, 3).setValues(abcRows);
+    }
+
+    // 7. Update Column D (Block Access):
+    //    - Wherever Col G is 'Yes' (verified === true), remove checkbox validation & clear cell!
+    //    - Wherever Col G is NOT 'Yes', show checkbox with its checked/unchecked state.
+    if (mergedRows.length > 0) {
+      const colDRange = clientsSheet.getRange(2, 4, mergedRows.length, 1);
+      const checkboxValidation = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+      const validations = [];
+      const dValues = [];
+
+      for (let k = 0; k < mergedRows.length; k++) {
+        if (mergedRows[k].verified) {
+          validations.push([null]);
+          dValues.push(['']);
+        } else {
+          validations.push([checkboxValidation]);
+          dValues.push([mergedRows[k].blocked === true]);
+        }
+      }
+
+      colDRange.setDataValidations(validations);
+      colDRange.setValues(dValues);
+      colDRange.setHorizontalAlignment('center');
+    }
+
+    if (showToast) {
+      const blockedCount = syncedRegistry.filter(c => c.blocked).length;
+      activeSs.toast(
+        `Total Clients: ${mergedRows.length}` +
+        (newAddedCount > 0 ? ` (+${newAddedCount} new)` : '') +
+        (blockedCount > 0 ? ` | ⛔ Blocked: ${blockedCount}` : ''),
+        '👥 Clients Tab Synced',
+        5
+      );
+    }
+  } catch (err) {
+    Logger.log('syncClientsTabOnMaster error: ' + err);
+  }
+}
+
+/**
+ * Master-only menu command to manually refresh the 'Clients' tab.
+ */
+function syncClientsTabMenu() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  syncClientsTabOnMaster(ss, true);
+}
+
